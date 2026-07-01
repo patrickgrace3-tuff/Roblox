@@ -34,6 +34,8 @@ createGrabbablePart("Crate", Vector3.new(10, 3, 0), Color3.fromRGB(150, 100, 60)
 createGrabbablePart("Crate", Vector3.new(15, 3, 5), Color3.fromRGB(150, 100, 60))
 createGrabbablePart("Ball", Vector3.new(-10, 3, 0), Color3.fromRGB(200, 50, 50))
 
+local THROW_SPEED = 40
+
 local function dropItem(player)
 	local held = heldItems[player]
 	if not held then
@@ -45,6 +47,12 @@ local function dropItem(player)
 	end
 	if held.part then
 		held.part.CanCollide = true
+
+		local character = player.Character
+		local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+		if rootPart then
+			held.part.AssemblyLinearVelocity = rootPart.CFrame.LookVector * THROW_SPEED
+		end
 	end
 	if held.prompt then
 		held.prompt.Enabled = true
