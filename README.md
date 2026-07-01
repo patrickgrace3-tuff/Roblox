@@ -48,7 +48,7 @@ Once you're happy with changes in Studio, publish normally via **File > Publish 
 ## Gameplay
 
 A gadget-arm grab mechanic, gated behind a pickup:
-- **G** — pick up the cyan "arm attachment" near spawn by standing close to it. This permanently unlocks the grab ability for that player (persists through respawns, until they leave) and welds a visible cyan accessory onto their hand.
+- **G** — pick up the "GrabPack2" arm attachment near spawn by standing close to it. This permanently unlocks the grab ability for that player (persists through respawns, until they leave) and welds a visible copy of the model onto their hand. The model is loaded at runtime from Roblox via its published Asset ID (`101749219980781`), falling back to a plain cyan box if the load ever fails.
 - **E** — (requires the arm attachment) while looking at a crate/ball (up to 150 studs away), reels it in with a stretching arm effect from your hand and holds it in front of you.
 - **T** — throws whatever you're holding forward.
 

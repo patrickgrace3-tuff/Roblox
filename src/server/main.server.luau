@@ -3,6 +3,38 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
+local InsertService = game:GetService("InsertService")
+
+local ARM_PICKUP_ASSET_ID = 101749219980781
+
+-- Loads the GrabPack2 model published to Roblox so the pickup/hand
+-- accessory don't depend on anything living only in a local Studio session.
+local function loadArmPickupTemplate()
+	local success, container = pcall(function()
+		return InsertService:LoadAsset(ARM_PICKUP_ASSET_ID)
+	end)
+
+	if not success or not container then
+		warn("Failed to load arm pickup asset " .. ARM_PICKUP_ASSET_ID)
+		return nil
+	end
+
+	local template = container:GetChildren()[1]
+	container:Destroy()
+	return template
+end
+
+local armPickupTemplate = loadArmPickupTemplate()
+
+local function getTemplatePart(instance)
+	if not instance then
+		return nil
+	end
+	if instance:IsA("BasePart") then
+		return instance
+	end
+	return instance.PrimaryPart or instance:FindFirstChild("Handle") or instance:FindFirstChildWhichIsA("BasePart", true)
+end
 
 local grabEvent = Instance.new("RemoteEvent")
 grabEvent.Name = "GrabItem"
@@ -43,7 +75,37 @@ createGrabbablePart("Ball", Vector3.new(-10, 3, 0), Color3.fromRGB(200, 50, 50))
 
 local armPickups = {}
 
+local function getPickupPosition(pickup)
+	local part = getTemplatePart(pickup)
+	return part and part.Position or nil
+end
+
 local function createArmPickup(position)
+	if armPickupTemplate then
+		local pickup = armPickupTemplate:Clone()
+		for _, part in pickup:GetDescendants() do
+			if part:IsA("BasePart") then
+				part.Anchored = true
+				part.CanCollide = false
+			end
+		end
+
+		if pickup:IsA("BasePart") then
+			pickup.Position = position
+		elseif pickup.PrimaryPart then
+			pickup:SetPrimaryPartCFrame(CFrame.new(position))
+		else
+			local anchorPart = getTemplatePart(pickup)
+			if anchorPart then
+				anchorPart.CFrame = CFrame.new(position)
+			end
+		end
+
+		pickup.Parent = Workspace
+		table.insert(armPickups, pickup)
+		return
+	end
+
 	local pickup = Instance.new("Part")
 	pickup.Name = "ArmAttachment"
 	pickup.Size = Vector3.new(2, 1, 1)
@@ -73,20 +135,44 @@ local function equipArmVisual(character)
 		return
 	end
 
-	local accessory = Instance.new("Part")
+	local accessory
+	if armPickupTemplate then
+		accessory = armPickupTemplate:Clone()
+		for _, part in accessory:GetDescendants() do
+			if part:IsA("BasePart") then
+				part.Anchored = false
+				part.CanCollide = false
+				part.Massless = true
+			end
+		end
+	else
+		accessory = Instance.new("Part")
+		accessory.Size = Vector3.new(0.6, 0.6, 1.4)
+		accessory.Material = Enum.Material.Metal
+		accessory.Color = Color3.fromRGB(0, 200, 200)
+		accessory.CanCollide = false
+		accessory.Massless = true
+	end
 	accessory.Name = "GadgetArmAccessory"
-	accessory.Size = Vector3.new(0.6, 0.6, 1.4)
-	accessory.Material = Enum.Material.Metal
-	accessory.Color = Color3.fromRGB(0, 200, 200)
-	accessory.CanCollide = false
-	accessory.Massless = true
-	accessory.CFrame = handPart.CFrame
+
+	local weldTarget = getTemplatePart(accessory)
+	if not weldTarget then
+		accessory:Destroy()
+		return
+	end
+
+	if accessory:IsA("Model") and accessory.PrimaryPart then
+		accessory:SetPrimaryPartCFrame(handPart.CFrame)
+	else
+		weldTarget.CFrame = handPart.CFrame
+	end
+
 	accessory.Parent = character
 
 	local weld = Instance.new("WeldConstraint")
 	weld.Part0 = handPart
-	weld.Part1 = accessory
-	weld.Parent = accessory
+	weld.Part1 = weldTarget
+	weld.Parent = weldTarget
 end
 
 local function releaseItem(player, throwVelocity)
@@ -214,7 +300,8 @@ pickupEvent.OnServerEvent:Connect(function(player)
 	end
 
 	for i, pickup in armPickups do
-		if pickup.Parent and (pickup.Position - rootPart.Position).Magnitude <= ARM_PICKUP_RANGE then
+		local pickupPosition = pickup.Parent and getPickupPosition(pickup)
+		if pickupPosition and (pickupPosition - rootPart.Position).Magnitude <= ARM_PICKUP_RANGE then
 			pickup:Destroy()
 			table.remove(armPickups, i)
 			player:SetAttribute("HasGadgetArm", true)
