@@ -12,10 +12,15 @@ local throwEvent = Instance.new("RemoteEvent")
 throwEvent.Name = "ThrowItem"
 throwEvent.Parent = ReplicatedStorage
 
+local pickupEvent = Instance.new("RemoteEvent")
+pickupEvent.Name = "PickupItem"
+pickupEvent.Parent = ReplicatedStorage
+
 local MAX_GRAB_DISTANCE = 60
 local PULL_TIME = 0.35
 local THROW_SPEED = 60
 local HOLD_OFFSET = CFrame.new(0, 0, -4)
+local ARM_PICKUP_RANGE = 6
 
 local heldItems = {} -- [player] = { part = Part, weld = WeldConstraint }
 local pulling = {} -- [part] = true while the gadget arm is reeling it in
@@ -35,6 +40,24 @@ end
 createGrabbablePart("Crate", Vector3.new(10, 3, 0), Color3.fromRGB(150, 100, 60))
 createGrabbablePart("Crate", Vector3.new(15, 3, 5), Color3.fromRGB(150, 100, 60))
 createGrabbablePart("Ball", Vector3.new(-10, 3, 0), Color3.fromRGB(200, 50, 50))
+
+local armPickups = {}
+
+local function createArmPickup(position)
+	local pickup = Instance.new("Part")
+	pickup.Name = "ArmAttachment"
+	pickup.Size = Vector3.new(2, 1, 1)
+	pickup.Position = position
+	pickup.Anchored = true
+	pickup.CanCollide = false
+	pickup.Material = Enum.Material.Metal
+	pickup.Color = Color3.fromRGB(0, 200, 200)
+	pickup.Parent = Workspace
+
+	table.insert(armPickups, pickup)
+end
+
+createArmPickup(Vector3.new(0, 3, 5))
 
 local function releaseItem(player, throwVelocity)
 	local held = heldItems[player]
@@ -139,6 +162,9 @@ local function grabItem(player, part)
 end
 
 grabEvent.OnServerEvent:Connect(function(player, part)
+	if not player:GetAttribute("HasGadgetArm") then
+		return
+	end
 	if typeof(part) ~= "Instance" or not part:IsA("BasePart") then
 		return
 	end
@@ -147,6 +173,23 @@ grabEvent.OnServerEvent:Connect(function(player, part)
 	end
 
 	grabItem(player, part)
+end)
+
+pickupEvent.OnServerEvent:Connect(function(player)
+	local character = player.Character
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+	if not rootPart then
+		return
+	end
+
+	for i, pickup in armPickups do
+		if pickup.Parent and (pickup.Position - rootPart.Position).Magnitude <= ARM_PICKUP_RANGE then
+			pickup:Destroy()
+			table.remove(armPickups, i)
+			player:SetAttribute("HasGadgetArm", true)
+			break
+		end
+	end
 end)
 
 throwEvent.OnServerEvent:Connect(function(player)

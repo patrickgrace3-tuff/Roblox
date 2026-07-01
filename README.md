@@ -47,8 +47,9 @@ Once you're happy with changes in Studio, publish normally via **File > Publish 
 
 ## Gameplay
 
-A gadget-arm grab mechanic:
-- **E** — while looking at a crate/ball (up to 60 studs away), reels it in with a stretching arm effect and holds it in front of you.
+A gadget-arm grab mechanic, gated behind a pickup:
+- **G** — pick up the cyan "arm attachment" near spawn by standing close to it. This permanently unlocks the grab ability for that player (persists through respawns, until they leave).
+- **E** — (requires the arm attachment) while looking at a crate/ball (up to 60 studs away), reels it in with a stretching arm effect and holds it in front of you.
 - **T** — throws whatever you're holding forward.
 
 ## Optional: CI publishing via Open Cloud

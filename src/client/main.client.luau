@@ -7,6 +7,7 @@ local player = Players.LocalPlayer
 
 local grabEvent = ReplicatedStorage:WaitForChild("GrabItem")
 local throwEvent = ReplicatedStorage:WaitForChild("ThrowItem")
+local pickupEvent = ReplicatedStorage:WaitForChild("PickupItem")
 
 local GRAB_RANGE = 60
 
@@ -39,5 +40,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		tryGrab()
 	elseif input.KeyCode == Enum.KeyCode.T then
 		throwEvent:FireServer()
+	elseif input.KeyCode == Enum.KeyCode.G then
+		pickupEvent:FireServer()
 	end
 end)
