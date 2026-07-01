@@ -9,7 +9,7 @@ local grabEvent = ReplicatedStorage:WaitForChild("GrabItem")
 local throwEvent = ReplicatedStorage:WaitForChild("ThrowItem")
 local pickupEvent = ReplicatedStorage:WaitForChild("PickupItem")
 
-local GRAB_RANGE = 60
+local GRAB_RANGE = 150
 
 local function tryGrab()
 	local character = player.Character

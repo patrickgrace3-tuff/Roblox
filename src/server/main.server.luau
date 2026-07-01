@@ -16,7 +16,7 @@ local pickupEvent = Instance.new("RemoteEvent")
 pickupEvent.Name = "PickupItem"
 pickupEvent.Parent = ReplicatedStorage
 
-local MAX_GRAB_DISTANCE = 60
+local MAX_GRAB_DISTANCE = 150
 local PULL_TIME = 0.35
 local THROW_SPEED = 60
 local HOLD_OFFSET = CFrame.new(0, 0, -4)
@@ -58,6 +58,36 @@ local function createArmPickup(position)
 end
 
 createArmPickup(Vector3.new(0, 3, 5))
+
+local function getHandPart(character)
+	return character:FindFirstChild("RightHand") or character:FindFirstChild("Right Arm")
+end
+
+local function equipArmVisual(character)
+	if character:FindFirstChild("GadgetArmAccessory") then
+		return
+	end
+
+	local handPart = getHandPart(character)
+	if not handPart then
+		return
+	end
+
+	local accessory = Instance.new("Part")
+	accessory.Name = "GadgetArmAccessory"
+	accessory.Size = Vector3.new(0.6, 0.6, 1.4)
+	accessory.Material = Enum.Material.Metal
+	accessory.Color = Color3.fromRGB(0, 200, 200)
+	accessory.CanCollide = false
+	accessory.Massless = true
+	accessory.CFrame = handPart.CFrame
+	accessory.Parent = character
+
+	local weld = Instance.new("WeldConstraint")
+	weld.Part0 = handPart
+	weld.Part1 = accessory
+	weld.Parent = accessory
+end
 
 local function releaseItem(player, throwVelocity)
 	local held = heldItems[player]
@@ -144,7 +174,8 @@ local function grabItem(player, part)
 	part.Anchored = true
 	part.CanCollide = false
 
-	local arm, armConnection = createGadgetArm(rootPart, part)
+	local armOrigin = getHandPart(character) or rootPart
+	local arm, armConnection = createGadgetArm(armOrigin, part)
 
 	local goalCFrame = rootPart.CFrame * HOLD_OFFSET
 	local tween = TweenService:Create(part, TweenInfo.new(PULL_TIME, Enum.EasingStyle.Quad), { CFrame = goalCFrame })
@@ -187,6 +218,7 @@ pickupEvent.OnServerEvent:Connect(function(player)
 			pickup:Destroy()
 			table.remove(armPickups, i)
 			player:SetAttribute("HasGadgetArm", true)
+			equipArmVisual(character)
 			break
 		end
 	end
@@ -206,6 +238,12 @@ throwEvent.OnServerEvent:Connect(function(player)
 end)
 
 Players.PlayerAdded:Connect(function(player)
+	player.CharacterAdded:Connect(function(character)
+		if player:GetAttribute("HasGadgetArm") then
+			equipArmVisual(character)
+		end
+	end)
+
 	player.CharacterRemoving:Connect(function()
 		releaseItem(player, nil)
 	end)
