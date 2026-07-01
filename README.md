@@ -45,6 +45,12 @@ rokit.toml             -> pinned toolchain versions
 
 Once you're happy with changes in Studio, publish normally via **File > Publish to Roblox...** (or Ctrl+Alt+P) — this pushes the synced place to the experience you created in step 1.
 
+## Gameplay
+
+A gadget-arm grab mechanic:
+- **E** — while looking at a crate/ball (up to 60 studs away), reels it in with a stretching arm effect and holds it in front of you.
+- **T** — throws whatever you're holding forward.
+
 ## Optional: CI publishing via Open Cloud
 
 For automated builds/publishing without Studio:

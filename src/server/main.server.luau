@@ -1,13 +1,24 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ProximityPromptService = game:GetService("ProximityPromptService")
 local Workspace = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
 
-local dropEvent = Instance.new("RemoteEvent")
-dropEvent.Name = "DropItem"
-dropEvent.Parent = ReplicatedStorage
+local grabEvent = Instance.new("RemoteEvent")
+grabEvent.Name = "GrabItem"
+grabEvent.Parent = ReplicatedStorage
 
-local heldItems = {} -- [player] = { part = Part, weld = WeldConstraint, prompt = ProximityPrompt }
+local throwEvent = Instance.new("RemoteEvent")
+throwEvent.Name = "ThrowItem"
+throwEvent.Parent = ReplicatedStorage
+
+local MAX_GRAB_DISTANCE = 60
+local PULL_TIME = 0.35
+local THROW_SPEED = 60
+local HOLD_OFFSET = CFrame.new(0, 0, -4)
+
+local heldItems = {} -- [player] = { part = Part, weld = WeldConstraint }
+local pulling = {} -- [part] = true while the gadget arm is reeling it in
 
 local function createGrabbablePart(name, position, color)
 	local part = Instance.new("Part")
@@ -17,16 +28,7 @@ local function createGrabbablePart(name, position, color)
 	part.Color = color
 	part.Anchored = true
 	part.Parent = Workspace
-
 	part:SetAttribute("Grabbable", true)
-
-	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "Grab"
-	prompt.ObjectText = name
-	prompt.HoldDuration = 0.25
-	prompt.MaxActivationDistance = 8
-	prompt.Parent = part
-
 	return part
 end
 
@@ -34,9 +36,7 @@ createGrabbablePart("Crate", Vector3.new(10, 3, 0), Color3.fromRGB(150, 100, 60)
 createGrabbablePart("Crate", Vector3.new(15, 3, 5), Color3.fromRGB(150, 100, 60))
 createGrabbablePart("Ball", Vector3.new(-10, 3, 0), Color3.fromRGB(200, 50, 50))
 
-local THROW_SPEED = 40
-
-local function dropItem(player)
+local function releaseItem(player, throwVelocity)
 	local held = heldItems[player]
 	if not held then
 		return
@@ -45,24 +45,65 @@ local function dropItem(player)
 	if held.weld then
 		held.weld:Destroy()
 	end
-	if held.part then
-		held.part.CanCollide = true
+	held.part.CanCollide = true
 
-		local character = player.Character
-		local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-		if rootPart then
-			held.part.AssemblyLinearVelocity = rootPart.CFrame.LookVector * THROW_SPEED
-		end
-	end
-	if held.prompt then
-		held.prompt.Enabled = true
+	if throwVelocity then
+		held.part.AssemblyLinearVelocity = throwVelocity
 	end
 
 	heldItems[player] = nil
 end
 
-local function grabItem(player, part, prompt)
-	if heldItems[player] then
+local function finishGrab(player, part)
+	local character = player.Character
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+	if not rootPart then
+		part.Anchored = false
+		pulling[part] = nil
+		return
+	end
+
+	part.Anchored = false
+	part.CanCollide = false
+
+	local weld = Instance.new("WeldConstraint")
+	weld.Part0 = rootPart
+	weld.Part1 = part
+	weld.Parent = part
+
+	heldItems[player] = { part = part, weld = weld }
+	pulling[part] = nil
+end
+
+local function createGadgetArm(rootPart, part)
+	local arm = Instance.new("Part")
+	arm.Name = "GadgetArm"
+	arm.Anchored = true
+	arm.CanCollide = false
+	arm.CanQuery = false
+	arm.Material = Enum.Material.Neon
+	arm.Color = Color3.fromRGB(255, 200, 0)
+	arm.Parent = Workspace
+
+	local connection
+	connection = RunService.Heartbeat:Connect(function()
+		if not part.Parent or not rootPart.Parent then
+			return
+		end
+
+		local startPos = rootPart.Position
+		local endPos = part.Position
+		local distance = math.max((endPos - startPos).Magnitude, 0.1)
+
+		arm.Size = Vector3.new(0.3, 0.3, distance)
+		arm.CFrame = CFrame.new(startPos:Lerp(endPos, 0.5), endPos)
+	end)
+
+	return arm, connection
+end
+
+local function grabItem(player, part)
+	if heldItems[player] or pulling[part] then
 		return
 	end
 
@@ -72,39 +113,61 @@ local function grabItem(player, part, prompt)
 		return
 	end
 
-	part.Anchored = false
-	part.CanCollide = false
-	part.CFrame = rootPart.CFrame * CFrame.new(0, 0, -4)
-
-	local weld = Instance.new("WeldConstraint")
-	weld.Part0 = rootPart
-	weld.Part1 = part
-	weld.Parent = part
-
-	prompt.Enabled = false
-
-	heldItems[player] = { part = part, weld = weld, prompt = prompt }
-end
-
-ProximityPromptService.PromptTriggered:Connect(function(prompt, player)
-	local part = prompt.Parent
-	if not part or not part:GetAttribute("Grabbable") then
+	if (part.Position - rootPart.Position).Magnitude > MAX_GRAB_DISTANCE then
 		return
 	end
 
-	grabItem(player, part, prompt)
+	pulling[part] = true
+	part.Anchored = true
+	part.CanCollide = false
+
+	local arm, armConnection = createGadgetArm(rootPart, part)
+
+	local goalCFrame = rootPart.CFrame * HOLD_OFFSET
+	local tween = TweenService:Create(part, TweenInfo.new(PULL_TIME, Enum.EasingStyle.Quad), { CFrame = goalCFrame })
+
+	tween.Completed:Connect(function()
+		armConnection:Disconnect()
+		arm:Destroy()
+
+		if pulling[part] then
+			finishGrab(player, part)
+		end
+	end)
+
+	tween:Play()
+end
+
+grabEvent.OnServerEvent:Connect(function(player, part)
+	if typeof(part) ~= "Instance" or not part:IsA("BasePart") then
+		return
+	end
+	if not part:GetAttribute("Grabbable") then
+		return
+	end
+
+	grabItem(player, part)
 end)
 
-dropEvent.OnServerEvent:Connect(function(player)
-	dropItem(player)
+throwEvent.OnServerEvent:Connect(function(player)
+	local held = heldItems[player]
+	if not held then
+		return
+	end
+
+	local character = player.Character
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+	local velocity = rootPart and (rootPart.CFrame.LookVector * THROW_SPEED + Vector3.new(0, 10, 0)) or nil
+
+	releaseItem(player, velocity)
 end)
 
 Players.PlayerAdded:Connect(function(player)
 	player.CharacterRemoving:Connect(function()
-		dropItem(player)
+		releaseItem(player, nil)
 	end)
 end)
 
 Players.PlayerRemoving:Connect(function(player)
-	dropItem(player)
+	releaseItem(player, nil)
 end)
