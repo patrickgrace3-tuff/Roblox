@@ -1,0 +1,10 @@
+# Build artifacts
+*.rbxl
+*.rbxlx
+sourcemap.json
+
+# OS
+.DS_Store
+
+# Editor
+.vscode/
