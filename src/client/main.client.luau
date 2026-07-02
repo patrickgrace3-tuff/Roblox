@@ -3,6 +3,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local ContextActionService = game:GetService("ContextActionService")
 
 local player = Players.LocalPlayer
 
@@ -48,6 +49,27 @@ meterFill.BorderSizePixel = 0
 meterFill.Size = UDim2.new(0, 0, 1, 0)
 meterFill.Parent = meterBackground
 
+-- Roblox's own default jump-on-Space would otherwise fire alongside our
+-- charge system; sink the input so it never reaches the default controller.
+local function suppressDefaultJump()
+	return Enum.ContextActionResult.Sink
+end
+
+local function updateJumpSuppression()
+	local remaining = player:GetAttribute("JumpsRemaining")
+	if remaining and remaining > 0 then
+		ContextActionService:BindActionAtPriority(
+			"SuppressDefaultJump",
+			suppressDefaultJump,
+			false,
+			Enum.ContextActionPriority.High.Value,
+			Enum.KeyCode.Space
+		)
+	else
+		ContextActionService:UnbindAction("SuppressDefaultJump")
+	end
+end
+
 local function updateJumpsLabel()
 	local remaining = player:GetAttribute("JumpsRemaining")
 	if remaining and remaining > 0 then
@@ -57,6 +79,8 @@ local function updateJumpsLabel()
 		jumpsLabel.Visible = false
 		meterBackground.Visible = false
 	end
+
+	updateJumpSuppression()
 end
 
 player:GetAttributeChangedSignal("JumpsRemaining"):Connect(updateJumpsLabel)
