@@ -103,7 +103,7 @@ local function performChargeJump(player, chargeFraction)
 	local minPower = boost.defaultJumpPower
 	local maxPower = boost.defaultJumpPower * JUMP_BOOST_MULTIPLIER
 	humanoid.JumpPower = minPower + chargeFraction * (maxPower - minPower)
-	humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+	humanoid.Jump = true
 
 	boost.remaining -= 1
 	if boost.remaining <= 0 then
