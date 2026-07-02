@@ -241,6 +241,19 @@ local function createGadgetArm(rootPart, part)
 	return arm, connection
 end
 
+local function createGrabHighlight(part)
+	local highlight = Instance.new("Highlight")
+	highlight.Name = "GrabHighlight"
+	highlight.FillColor = Color3.fromRGB(0, 200, 200)
+	highlight.FillTransparency = 0.7
+	highlight.OutlineColor = Color3.fromRGB(255, 200, 0)
+	highlight.OutlineTransparency = 0
+	highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+	highlight.Adornee = part
+	highlight.Parent = part
+	return highlight
+end
+
 local function grabItem(player, part)
 	if heldItems[player] or pulling[part] then
 		return
@@ -262,6 +275,7 @@ local function grabItem(player, part)
 
 	local armOrigin = getHandPart(character) or rootPart
 	local arm, armConnection = createGadgetArm(armOrigin, part)
+	local highlight = createGrabHighlight(part)
 
 	local goalCFrame = rootPart.CFrame * HOLD_OFFSET
 	local tween = TweenService:Create(part, TweenInfo.new(PULL_TIME, Enum.EasingStyle.Quad), { CFrame = goalCFrame })
@@ -269,6 +283,7 @@ local function grabItem(player, part)
 	tween.Completed:Connect(function()
 		armConnection:Disconnect()
 		arm:Destroy()
+		highlight:Destroy()
 
 		if pulling[part] then
 			finishGrab(player, part)
