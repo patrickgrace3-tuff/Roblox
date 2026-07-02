@@ -16,13 +16,13 @@ local toggleFlightEvent = Instance.new("RemoteEvent")
 toggleFlightEvent.Name = "ToggleFlight"
 toggleFlightEvent.Parent = ReplicatedStorage
 
-local swordSwingEvent = Instance.new("RemoteEvent")
-swordSwingEvent.Name = "SwordSwing"
-swordSwingEvent.Parent = ReplicatedStorage
+local toggleAutoSwingEvent = Instance.new("RemoteEvent")
+toggleAutoSwingEvent.Name = "ToggleAutoSwing"
+toggleAutoSwingEvent.Parent = ReplicatedStorage
 
-local setBlockingEvent = Instance.new("RemoteEvent")
-setBlockingEvent.Name = "SetBlocking"
-setBlockingEvent.Parent = ReplicatedStorage
+local activateShieldEvent = Instance.new("RemoteEvent")
+activateShieldEvent.Name = "ActivateShield"
+activateShieldEvent.Parent = ReplicatedStorage
 
 local MAX_PLATFORMS_PER_PLAYER = 8
 local PLATFORM_SIZE = Vector3.new(6, 1, 6)
@@ -50,13 +50,16 @@ local BOSS_ATTACK_RANGE = 6
 
 local SWORD_DAMAGE = 15
 local SWORD_RANGE = 7
-local SHIELD_DAMAGE_REDUCTION = 0.6
+local AUTO_SWING_INTERVAL = 0.6
+local SHIELD_DURATION = 3
 
 local platformQueues = {} -- [player] = { platform, platform, ... } oldest first
 local lastShotTime = {} -- [player] = os.clock() of last shot
 local jumpBoosts = {} -- [player] = { remaining }
 local flyingPlayers = {} -- [player] = true while actively flying
 local mobs = {} -- [mobModel] = { health, maxHealth, damage, speed, attackRange, detectRange, attackCooldown, lastAttackTime, isBoss }
+local autoSwingPlayers = {} -- [player] = os.clock() of last auto-swing
+local shieldExpiry = {} -- [player] = os.clock() the shield buff ends
 
 local function setupJungleAtmosphere()
 	Lighting.Ambient = Color3.fromRGB(55, 75, 45)
@@ -310,8 +313,9 @@ local function damagePlayer(player, amount)
 		return
 	end
 
-	if player:GetAttribute("IsBlocking") then
-		amount *= 1 - SHIELD_DAMAGE_REDUCTION
+	local expiry = shieldExpiry[player]
+	if expiry and os.clock() < expiry then
+		return
 	end
 
 	humanoid:TakeDamage(amount)
@@ -572,6 +576,51 @@ local function performSwordSwing(player)
 			end
 		end
 	end
+end
+
+local function stopAutoSwing(player)
+	autoSwingPlayers[player] = nil
+	player:SetAttribute("IsAutoSwinging", nil)
+end
+
+local function toggleAutoSwing(player)
+	if not player:GetAttribute("HasSword") then
+		return
+	end
+
+	if autoSwingPlayers[player] then
+		stopAutoSwing(player)
+	else
+		autoSwingPlayers[player] = 0
+		player:SetAttribute("IsAutoSwinging", true)
+	end
+end
+
+RunService.Heartbeat:Connect(function()
+	local now = os.clock()
+	for player, lastSwingTime in pairs(autoSwingPlayers) do
+		if now - lastSwingTime >= AUTO_SWING_INTERVAL then
+			autoSwingPlayers[player] = now
+			performSwordSwing(player)
+		end
+	end
+end)
+
+local function activateShield(player)
+	if not player:GetAttribute("HasSword") then
+		return
+	end
+
+	local expiry = os.clock() + SHIELD_DURATION
+	shieldExpiry[player] = expiry
+	player:SetAttribute("ShieldActive", true)
+
+	task.delay(SHIELD_DURATION, function()
+		if shieldExpiry[player] == expiry then
+			shieldExpiry[player] = nil
+			player:SetAttribute("ShieldActive", nil)
+		end
+	end)
 end
 
 local function createTorch(position)
@@ -1008,20 +1057,12 @@ toggleFlightEvent.OnServerEvent:Connect(function(player)
 	setFlying(player, not flyingPlayers[player])
 end)
 
-swordSwingEvent.OnServerEvent:Connect(function(player)
-	performSwordSwing(player)
+toggleAutoSwingEvent.OnServerEvent:Connect(function(player)
+	toggleAutoSwing(player)
 end)
 
-setBlockingEvent.OnServerEvent:Connect(function(player, blocking)
-	if typeof(blocking) ~= "boolean" then
-		return
-	end
-
-	if not player:GetAttribute("HasSword") then
-		return
-	end
-
-	player:SetAttribute("IsBlocking", blocking or nil)
+activateShieldEvent.OnServerEvent:Connect(function(player)
+	activateShield(player)
 end)
 
 Players.PlayerAdded:Connect(function(player)
@@ -1034,6 +1075,7 @@ Players.PlayerAdded:Connect(function(player)
 	player.CharacterRemoving:Connect(function()
 		endJumpBoost(player)
 		flyingPlayers[player] = nil
+		stopAutoSwing(player)
 	end)
 end)
 
@@ -1048,5 +1090,7 @@ Players.PlayerRemoving:Connect(function(player)
 	platformQueues[player] = nil
 	lastShotTime[player] = nil
 	flyingPlayers[player] = nil
+	shieldExpiry[player] = nil
 	endJumpBoost(player)
+	stopAutoSwing(player)
 end)

@@ -9,8 +9,8 @@ local player = Players.LocalPlayer
 local shootEvent = ReplicatedStorage:WaitForChild("ShootPlatform")
 local chargeJumpEvent = ReplicatedStorage:WaitForChild("ChargeJump")
 local toggleFlightEvent = ReplicatedStorage:WaitForChild("ToggleFlight")
-local swordSwingEvent = ReplicatedStorage:WaitForChild("SwordSwing")
-local setBlockingEvent = ReplicatedStorage:WaitForChild("SetBlocking")
+local toggleAutoSwingEvent = ReplicatedStorage:WaitForChild("ToggleAutoSwing")
+local activateShieldEvent = ReplicatedStorage:WaitForChild("ActivateShield")
 
 local MAX_CHARGE_TIME = 1.2
 local JUMP_BOOST_MULTIPLIER = 5
@@ -178,6 +178,42 @@ if player.Character then
 end
 player.CharacterAdded:Connect(hookHealthBar)
 
+local abilityLabel = Instance.new("TextLabel")
+abilityLabel.Name = "AbilityLabel"
+abilityLabel.AnchorPoint = Vector2.new(1, 1)
+abilityLabel.Position = UDim2.new(0.98, 0, 0.98, 0)
+abilityLabel.Size = UDim2.new(0, 260, 0, 30)
+abilityLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+abilityLabel.BackgroundTransparency = 0.3
+abilityLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+abilityLabel.Font = Enum.Font.GothamBold
+abilityLabel.TextScaled = true
+abilityLabel.Text = ""
+abilityLabel.Visible = false
+abilityLabel.Parent = screenGui
+
+local function updateAbilityLabel()
+	local autoSwinging = player:GetAttribute("IsAutoSwinging")
+	local shieldActive = player:GetAttribute("ShieldActive")
+
+	if autoSwinging and shieldActive then
+		abilityLabel.Text = "Auto-Swing: ON | Shield: Active"
+		abilityLabel.TextColor3 = Color3.fromRGB(120, 220, 255)
+	elseif autoSwinging then
+		abilityLabel.Text = "Auto-Swing: ON (press 1 to stop)"
+		abilityLabel.TextColor3 = Color3.fromRGB(255, 220, 120)
+	elseif shieldActive then
+		abilityLabel.Text = "Shield: Active"
+		abilityLabel.TextColor3 = Color3.fromRGB(120, 220, 255)
+	end
+
+	abilityLabel.Visible = autoSwinging == true or shieldActive == true
+end
+
+player:GetAttributeChangedSignal("IsAutoSwinging"):Connect(updateAbilityLabel)
+player:GetAttributeChangedSignal("ShieldActive"):Connect(updateAbilityLabel)
+updateAbilityLabel()
+
 local function shoot()
 	local camera = Workspace.CurrentCamera
 	if not camera then
@@ -251,24 +287,20 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	end
 
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		if player:GetAttribute("HasSword") then
-			swordSwingEvent:FireServer()
-		else
-			shoot()
-		end
-	elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
-		setBlockingEvent:FireServer(true)
+		shoot()
 	elseif input.KeyCode == Enum.KeyCode.Space then
 		beginCharge()
 	elseif input.KeyCode == Enum.KeyCode.F then
 		toggleFlightEvent:FireServer()
+	elseif input.KeyCode == Enum.KeyCode.One then
+		toggleAutoSwingEvent:FireServer()
+	elseif input.KeyCode == Enum.KeyCode.Two then
+		activateShieldEvent:FireServer()
 	end
 end)
 
 UserInputService.InputEnded:Connect(function(input)
 	if input.KeyCode == Enum.KeyCode.Space then
 		releaseCharge()
-	elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
-		setBlockingEvent:FireServer(false)
 	end
 end)
