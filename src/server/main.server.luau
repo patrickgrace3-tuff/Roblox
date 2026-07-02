@@ -94,10 +94,6 @@ local function performChargeJump(player, chargeFraction)
 		return
 	end
 
-	if humanoid:GetState() == Enum.HumanoidStateType.Freefall then
-		return
-	end
-
 	chargeFraction = math.clamp(chargeFraction, 0, 1)
 
 	local minPower = boost.defaultJumpPower
