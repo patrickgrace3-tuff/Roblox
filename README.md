@@ -53,7 +53,8 @@ A platform-gun obby with a jungle theme: climb 200 studs up a grove of trees by 
 - Each player can have at most **8 active platforms** at once; shooting a 9th removes their oldest one, so you can't just build a permanent staircase — you have to keep climbing.
 - An orange **jump spring** sits at the base of the trees, right before the grove. Stepping on it grants 10 charge-jumps (shown as a "Jump Boost: N" counter) and refreshes if you touch it again. While active, normal auto-jump is replaced by a charge jump: **hold Space** to fill the on-screen meter (up to 1.2s) and **release** to jump — a quick tap jumps at normal height, holding the full meter jumps 5x as high.
 - Reach the glowing green **Goal** platform at the top of the grove to win.
-- The level is a procedurally generated jungle: rows of climbable wood-trunk trees with leafy canopies on either side, a rock cliff backdrop, scattered rocks/bushes around the spawn floor, and a hazy green-tinted atmosphere/lighting for mood.
+- The jungle level is procedurally generated: rows of climbable wood-trunk trees with leafy canopies on either side, a rock cliff backdrop, scattered rocks/bushes around the spawn floor, and a hazy green-tinted atmosphere/lighting for mood.
+- Right next to it (offset along X, no overlap) is a second **beach** zone with the same climbing mechanic: sandy ground, an ocean backdrop, palm trees, and climbable sandstone rock pillars with translucent blue waterfall overlays draping down a back cliff. It has its own jump spring and goal. Note: with two `SpawnLocation`s now in the world, Roblox may spawn players in either zone somewhat unpredictably on join.
 
 ## Optional: CI publishing via Open Cloud
 

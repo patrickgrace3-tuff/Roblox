@@ -18,6 +18,7 @@ local SHOOT_COOLDOWN = 0.15
 local SHAFT_HEIGHT = 200
 local JUMP_BOOST_MULTIPLIER = 5
 local JUMP_BOOST_COUNT = 10
+local BEACH_CENTER_X = 90
 
 local platformQueues = {} -- [player] = { platform, platform, ... } oldest first
 local lastShotTime = {} -- [player] = os.clock() of last shot
@@ -227,10 +228,160 @@ local function createJungleClimbArea()
 	goal.Parent = Workspace
 end
 
+local function createPalmTree(position)
+	local trunkHeight = 14 + math.random() * 4
+	local trunk = Instance.new("Part")
+	trunk.Name = "PalmTrunk"
+	trunk.Shape = Enum.PartType.Cylinder
+	trunk.Size = Vector3.new(trunkHeight, 1.4, 1.4)
+	trunk.CFrame = CFrame.new(position + Vector3.new(0, trunkHeight / 2, 0)) * CFrame.Angles(0, 0, math.rad(96))
+	trunk.Anchored = true
+	trunk.Material = Enum.Material.Wood
+	trunk.Color = Color3.fromRGB(150, 120, 80)
+	trunk.Parent = Workspace
+
+	local topPosition = position + Vector3.new(0, trunkHeight, 0)
+	for i = 1, 6 do
+		local frond = Instance.new("Part")
+		frond.Name = "PalmFrond"
+		frond.Size = Vector3.new(0.4, 0.3, 7)
+		frond.Anchored = true
+		frond.CanCollide = false
+		frond.Material = Enum.Material.Grass
+		frond.Color = Color3.fromRGB(60, 150, 70)
+
+		local angle = (i / 6) * math.pi * 2
+		frond.CFrame = CFrame.new(topPosition) * CFrame.Angles(0, angle, 0) * CFrame.Angles(math.rad(20), 0, 0) * CFrame.new(0, 0, -3.5)
+		frond.Parent = Workspace
+	end
+end
+
+local function createRockPillar(position, height, radius)
+	local pillar = Instance.new("Part")
+	pillar.Name = "RockPillar"
+	pillar.Shape = Enum.PartType.Cylinder
+	pillar.Size = Vector3.new(height, radius * 2, radius * 2)
+	pillar.CFrame = CFrame.new(position + Vector3.new(0, height / 2, 0)) * CFrame.Angles(0, 0, math.rad(90))
+	pillar.Anchored = true
+	pillar.Material = Enum.Material.Sandstone
+	pillar.Color = Color3.fromRGB(190, 150, 100)
+	pillar.Parent = Workspace
+	return pillar
+end
+
+local function createWaterfallOverlay(position, height, width)
+	local waterfall = Instance.new("Part")
+	waterfall.Name = "Waterfall"
+	waterfall.Size = Vector3.new(width, height, 0.4)
+	waterfall.Anchored = true
+	waterfall.CanCollide = false
+	waterfall.CanQuery = false
+	waterfall.Material = Enum.Material.Glass
+	waterfall.Color = Color3.fromRGB(120, 190, 220)
+	waterfall.Transparency = 0.35
+	waterfall.CFrame = CFrame.new(position + Vector3.new(0, height / 2, 0))
+	waterfall.Parent = Workspace
+	return waterfall
+end
+
+local function createBeachSpawnArea()
+	local floor = Instance.new("Part")
+	floor.Name = "SandFloor"
+	floor.Size = Vector3.new(40, 1, 40)
+	floor.Anchored = true
+	floor.Material = Enum.Material.Sand
+	floor.Color = Color3.fromRGB(230, 205, 150)
+	floor.CFrame = CFrame.new(BEACH_CENTER_X, 0, 20)
+	floor.Parent = Workspace
+
+	local ocean = Instance.new("Part")
+	ocean.Name = "Ocean"
+	ocean.Size = Vector3.new(60, 1, 30)
+	ocean.Anchored = true
+	ocean.CanCollide = false
+	ocean.Material = Enum.Material.Glass
+	ocean.Color = Color3.fromRGB(40, 130, 180)
+	ocean.Transparency = 0.2
+	ocean.CFrame = CFrame.new(BEACH_CENTER_X, 0.5, 55)
+	ocean.Parent = Workspace
+
+	local spawnLocation = Instance.new("SpawnLocation")
+	spawnLocation.Name = "BeachSpawn"
+	spawnLocation.Size = Vector3.new(6, 1, 6)
+	spawnLocation.Anchored = true
+	spawnLocation.Material = Enum.Material.Wood
+	spawnLocation.Color = Color3.fromRGB(180, 150, 100)
+	spawnLocation.CFrame = CFrame.new(BEACH_CENTER_X, 1, 30) * CFrame.Angles(0, math.pi, 0)
+	spawnLocation.Parent = Workspace
+
+	for _ = 1, 6 do
+		local x = BEACH_CENTER_X + (math.random() - 0.5) * 30
+		local z = (math.random() - 0.5) * 30 + 25
+		createPalmTree(Vector3.new(x, 0, z))
+	end
+
+	for _ = 1, 10 do
+		local shell = Instance.new("Part")
+		shell.Shape = Enum.PartType.Ball
+		shell.Name = "Shell"
+		local size = 0.8 + math.random() * 0.8
+		shell.Size = Vector3.new(size, size * 0.5, size)
+		local x = BEACH_CENTER_X + (math.random() - 0.5) * 32
+		local z = (math.random() - 0.5) * 30 + 25
+		shell.CFrame = CFrame.new(x, size / 4, z)
+		shell.Anchored = true
+		shell.CanCollide = false
+		shell.Material = Enum.Material.SmoothPlastic
+		shell.Color = Color3.fromRGB(240, 230, 210)
+		shell.Parent = Workspace
+	end
+end
+
+local function createBeachClimbArea()
+	local pillarHeight = SHAFT_HEIGHT
+	local pillarRadius = 3
+	local spacingZ = 10
+	local numPerSide = 5
+	local sideX = 9
+
+	for i = 1, numPerSide do
+		local z = (i - 1) * spacingZ - ((numPerSide - 1) * spacingZ) / 2
+		createRockPillar(Vector3.new(BEACH_CENTER_X - sideX, 0, z), pillarHeight, pillarRadius)
+		createRockPillar(Vector3.new(BEACH_CENTER_X + sideX, 0, z), pillarHeight, pillarRadius)
+	end
+
+	local backCliff = Instance.new("Part")
+	backCliff.Name = "BeachCliff"
+	backCliff.Size = Vector3.new(20, pillarHeight, 2)
+	backCliff.Anchored = true
+	backCliff.Material = Enum.Material.Sandstone
+	backCliff.Color = Color3.fromRGB(200, 165, 115)
+	backCliff.CFrame = CFrame.new(BEACH_CENTER_X, pillarHeight / 2, -25)
+	backCliff.Parent = Workspace
+
+	for i = 1, 3 do
+		local waterfallX = BEACH_CENTER_X + (i - 2) * 6
+		createWaterfallOverlay(Vector3.new(waterfallX, 0, -24), pillarHeight, 3)
+	end
+
+	local goal = Instance.new("Part")
+	goal.Name = "BeachGoal"
+	goal.Size = Vector3.new(12, 1, 16)
+	goal.Anchored = true
+	goal.Material = Enum.Material.Neon
+	goal.Color = Color3.fromRGB(255, 220, 80)
+	goal.CFrame = CFrame.new(BEACH_CENTER_X, pillarHeight + 1, 0)
+	goal.Parent = Workspace
+end
+
 setupJungleAtmosphere()
 createSpawnArea()
 createJungleClimbArea()
 createJumpSpring(Vector3.new(0, 1, 18))
+
+createBeachSpawnArea()
+createBeachClimbArea()
+createJumpSpring(Vector3.new(BEACH_CENTER_X, 1, 18))
 
 local function removeOldestPlatform(player)
 	local queue = platformQueues[player]
