@@ -58,13 +58,7 @@ end
 local function updateJumpSuppression()
 	local remaining = player:GetAttribute("JumpsRemaining")
 	if remaining and remaining > 0 then
-		ContextActionService:BindActionAtPriority(
-			"SuppressDefaultJump",
-			suppressDefaultJump,
-			false,
-			Enum.ContextActionPriority.High.Value,
-			Enum.KeyCode.Space
-		)
+		ContextActionService:BindAction("SuppressDefaultJump", suppressDefaultJump, false, Enum.KeyCode.Space)
 	else
 		ContextActionService:UnbindAction("SuppressDefaultJump")
 	end
