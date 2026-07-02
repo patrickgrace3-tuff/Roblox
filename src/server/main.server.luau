@@ -11,7 +11,7 @@ local PLATFORM_SIZE = Vector3.new(6, 1, 6)
 local MAX_SHOOT_DISTANCE = 300
 local SHOOT_COOLDOWN = 0.15
 local SHAFT_HEIGHT = 200
-local JUMP_BOOST_MULTIPLIER = 200 -- deliberately extreme for edge testing, scale back after confirming
+local JUMP_BOOST_MULTIPLIER = 15
 local JUMP_BOOST_COUNT = 10
 
 local platformQueues = {} -- [player] = { platform, platform, ... } oldest first
