@@ -338,7 +338,8 @@ local function damageMob(model, amount)
 		return
 	end
 
-	data.health -= amount
+	data.health = math.max(data.health - amount, 0)
+
 	if data.health <= 0 then
 		mobs[model] = nil
 		local position = model.PrimaryPart and model.PrimaryPart.Position or Vector3.new()
@@ -348,6 +349,8 @@ local function damageMob(model, amount)
 		if isBoss then
 			createVictoryPedestal(position)
 		end
+	elseif data.healthBarFill then
+		data.healthBarFill.Size = UDim2.new(data.health / data.maxHealth, 0, 1, 0)
 	end
 end
 
@@ -403,31 +406,52 @@ local function createMob(position, isBoss)
 		bowl.Color = Color3.fromRGB(200, 200, 210)
 		bowl.CFrame = handle.CFrame * CFrame.new(0, 3.5, 0)
 		bowl.Parent = model
+	end
 
-		local nameTag = Instance.new("BillboardGui")
-		nameTag.Name = "NameTag"
-		nameTag.Size = UDim2.new(0, 220, 0, 40)
-		nameTag.StudsOffset = Vector3.new(0, bodySize.Y / 2 + headSize / 2 + 2, 0)
-		nameTag.AlwaysOnTop = true
-		nameTag.Adornee = body
-		nameTag.Parent = body
+	local billboardHeight = isBoss and 46 or 24
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = "HealthBarGui"
+	billboard.Size = UDim2.new(0, 200, 0, billboardHeight)
+	billboard.StudsOffset = Vector3.new(0, bodySize.Y / 2 + headSize / 2 + 1.5, 0)
+	billboard.AlwaysOnTop = true
+	billboard.Adornee = body
+	billboard.Parent = body
 
+	if isBoss then
 		local nameLabel = Instance.new("TextLabel")
-		nameLabel.Size = UDim2.new(1, 0, 1, 0)
+		nameLabel.Name = "NameLabel"
+		nameLabel.Size = UDim2.new(1, 0, 0, 20)
 		nameLabel.BackgroundTransparency = 1
 		nameLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
 		nameLabel.Font = Enum.Font.GothamBold
 		nameLabel.TextScaled = true
 		nameLabel.Text = "Nonna Fury"
-		nameLabel.Parent = nameTag
+		nameLabel.Parent = billboard
 	end
+
+	local healthBarBackground = Instance.new("Frame")
+	healthBarBackground.Name = "HealthBarBackground"
+	healthBarBackground.Position = UDim2.new(0, 0, 0, isBoss and 22 or 0)
+	healthBarBackground.Size = UDim2.new(1, 0, 0, isBoss and 18 or 20)
+	healthBarBackground.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	healthBarBackground.BackgroundTransparency = 0.3
+	healthBarBackground.BorderSizePixel = 0
+	healthBarBackground.Parent = billboard
+
+	local healthBarFill = Instance.new("Frame")
+	healthBarFill.Name = "HealthBarFill"
+	healthBarFill.BackgroundColor3 = Color3.fromRGB(220, 40, 40)
+	healthBarFill.BorderSizePixel = 0
+	healthBarFill.Size = UDim2.new(1, 0, 1, 0)
+	healthBarFill.Parent = healthBarBackground
 
 	model.PrimaryPart = body
 	model.Parent = Workspace
 
+	local maxHealth = isBoss and BOSS_HEALTH or MOB_HEALTH
 	mobs[model] = {
-		health = isBoss and BOSS_HEALTH or MOB_HEALTH,
-		maxHealth = isBoss and BOSS_HEALTH or MOB_HEALTH,
+		health = maxHealth,
+		maxHealth = maxHealth,
 		damage = isBoss and BOSS_DAMAGE or MOB_DAMAGE,
 		speed = isBoss and BOSS_SPEED or MOB_SPEED,
 		attackRange = isBoss and BOSS_ATTACK_RANGE or MOB_ATTACK_RANGE,
@@ -435,6 +459,7 @@ local function createMob(position, isBoss)
 		attackCooldown = MOB_ATTACK_COOLDOWN,
 		lastAttackTime = 0,
 		isBoss = isBoss,
+		healthBarFill = healthBarFill,
 	}
 
 	return model
