@@ -3,6 +3,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local Lighting = game:GetService("Lighting")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 
 local shootEvent = Instance.new("RemoteEvent")
 shootEvent.Name = "ShootPlatform"
@@ -23,6 +24,10 @@ toggleAutoSwingEvent.Parent = ReplicatedStorage
 local activateShieldEvent = Instance.new("RemoteEvent")
 activateShieldEvent.Name = "ActivateShield"
 activateShieldEvent.Parent = ReplicatedStorage
+
+local shootArrowEvent = Instance.new("RemoteEvent")
+shootArrowEvent.Name = "ShootArrow"
+shootArrowEvent.Parent = ReplicatedStorage
 
 local MAX_PLATFORMS_PER_PLAYER = 8
 local PLATFORM_SIZE = Vector3.new(6, 1, 6)
@@ -52,6 +57,8 @@ local SWORD_DAMAGE = 15
 local SWORD_RANGE = 7
 local AUTO_SWING_INTERVAL = 0.6
 local SHIELD_DURATION = 3
+local BOW_DAMAGE = 12
+local BOW_RANGE = 200
 
 local platformQueues = {} -- [player] = { platform, platform, ... } oldest first
 local lastShotTime = {} -- [player] = os.clock() of last shot
@@ -648,6 +655,61 @@ local function activateShield(player)
 	end)
 end
 
+local function createArrowVisual(startPosition, endPosition)
+	local arrow = Instance.new("Part")
+	arrow.Name = "Arrow"
+	arrow.Size = Vector3.new(0.2, 0.2, 3)
+	arrow.Anchored = true
+	arrow.CanCollide = false
+	arrow.CanQuery = false
+	arrow.Material = Enum.Material.Wood
+	arrow.Color = Color3.fromRGB(120, 80, 40)
+	arrow.CFrame = CFrame.new(startPosition, endPosition)
+	arrow.Parent = Workspace
+
+	local distance = (endPosition - startPosition).Magnitude
+	local duration = math.clamp(distance / 200, 0.05, 0.5)
+
+	local tween = TweenService:Create(
+		arrow,
+		TweenInfo.new(duration, Enum.EasingStyle.Linear),
+		{ CFrame = CFrame.new(endPosition, endPosition + (endPosition - startPosition)) }
+	)
+	tween.Completed:Connect(function()
+		arrow:Destroy()
+	end)
+	tween:Play()
+end
+
+local function performBowShot(player, origin, direction)
+	if not player:GetAttribute("HasSword") then
+		return
+	end
+
+	local character = player.Character
+	if not character then
+		return
+	end
+
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { character }
+
+	local result = Workspace:Raycast(origin, direction.Unit * BOW_RANGE, params)
+	local endPosition = origin + direction.Unit * BOW_RANGE
+
+	if result then
+		endPosition = result.Position
+
+		local hitModel = result.Instance:FindFirstAncestorOfClass("Model")
+		if hitModel and mobs[hitModel] then
+			damageMob(hitModel, BOW_DAMAGE)
+		end
+	end
+
+	createArrowVisual(origin, endPosition)
+end
+
 local function createTorch(position)
 	local torch = Instance.new("Part")
 	torch.Name = "Torch"
@@ -667,9 +729,9 @@ local function createTorch(position)
 end
 
 local function createDungeonLevel()
-	local corridorLength = 100
-	local corridorWidth = 16
-	local wallHeight = 14
+	local corridorLength = 400
+	local corridorWidth = 24
+	local wallHeight = 20
 
 	local floor = Instance.new("Part")
 	floor.Name = "DungeonFloor"
@@ -712,14 +774,14 @@ local function createDungeonLevel()
 	entranceGate.CFrame = CFrame.new(DUNGEON_CENTER_X, 0, -2)
 	entranceGate.Parent = Workspace
 
-	for z = 0, corridorLength, 20 do
+	for z = 0, corridorLength, 30 do
 		createTorch(Vector3.new(DUNGEON_CENTER_X - corridorWidth / 2 + 0.5, 8, z))
 		createTorch(Vector3.new(DUNGEON_CENTER_X + corridorWidth / 2 - 0.5, 8, z))
 	end
 
-	local bossRoomLength = 40
-	local bossRoomWidth = 36
-	local bossWallHeight = 24
+	local bossRoomLength = 70
+	local bossRoomWidth = 50
+	local bossWallHeight = 30
 
 	local bossFloor = Instance.new("Part")
 	bossFloor.Name = "BossRoomFloor"
@@ -767,8 +829,8 @@ local function createDungeonLevel()
 
 	createWeaponRack(Vector3.new(DUNGEON_CENTER_X - 5, 2.5, 6))
 
-	local mobPositionsZ = { 20, 35, 50, 65, 80 }
-	for _, z in ipairs(mobPositionsZ) do
+	local mobSpacing = 35
+	for z = 25, corridorLength - 25, mobSpacing do
 		local xOffset = (math.random() - 0.5) * (corridorWidth - 4)
 		createMob(Vector3.new(DUNGEON_CENTER_X + xOffset, 0, z), false)
 	end
@@ -1090,11 +1152,19 @@ activateShieldEvent.OnServerEvent:Connect(function(player)
 	activateShield(player)
 end)
 
+shootArrowEvent.OnServerEvent:Connect(function(player, origin, direction)
+	if typeof(origin) ~= "Vector3" or typeof(direction) ~= "Vector3" then
+		return
+	end
+
+	performBowShot(player, origin, direction)
+end)
+
 Players.PlayerAdded:Connect(function(player)
+	player:SetAttribute("HasSword", true)
+
 	player.CharacterAdded:Connect(function(character)
-		if player:GetAttribute("HasSword") then
-			equipWeapons(character)
-		end
+		equipWeapons(character)
 	end)
 
 	player.CharacterRemoving:Connect(function()

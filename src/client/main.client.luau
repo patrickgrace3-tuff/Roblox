@@ -11,6 +11,7 @@ local chargeJumpEvent = ReplicatedStorage:WaitForChild("ChargeJump")
 local toggleFlightEvent = ReplicatedStorage:WaitForChild("ToggleFlight")
 local toggleAutoSwingEvent = ReplicatedStorage:WaitForChild("ToggleAutoSwing")
 local activateShieldEvent = ReplicatedStorage:WaitForChild("ActivateShield")
+local shootArrowEvent = ReplicatedStorage:WaitForChild("ShootArrow")
 
 local MAX_CHARGE_TIME = 1.2
 local JUMP_BOOST_MULTIPLIER = 5
@@ -226,6 +227,18 @@ local function shoot()
 	shootEvent:FireServer(ray.Origin, ray.Direction)
 end
 
+local function shootArrow()
+	local camera = Workspace.CurrentCamera
+	if not camera then
+		return
+	end
+
+	local mouseLocation = UserInputService:GetMouseLocation()
+	local ray = camera:ViewportPointToRay(mouseLocation.X, mouseLocation.Y)
+
+	shootArrowEvent:FireServer(ray.Origin, ray.Direction)
+end
+
 local isCharging = false
 local chargeStartTime = 0
 local chargeConnection
@@ -296,6 +309,8 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		toggleAutoSwingEvent:FireServer()
 	elseif input.KeyCode == Enum.KeyCode.Two then
 		activateShieldEvent:FireServer()
+	elseif input.KeyCode == Enum.KeyCode.Three then
+		shootArrow()
 	end
 end)
 
