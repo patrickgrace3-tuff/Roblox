@@ -10,6 +10,7 @@ local shootEvent = ReplicatedStorage:WaitForChild("ShootPlatform")
 local chargeJumpEvent = ReplicatedStorage:WaitForChild("ChargeJump")
 
 local MAX_CHARGE_TIME = 1.2
+local JUMP_BOOST_MULTIPLIER = 5
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "JumpBoostGui"
@@ -109,7 +110,23 @@ local function releaseCharge()
 	meterBackground.Visible = false
 
 	local fraction = math.clamp((os.clock() - chargeStartTime) / MAX_CHARGE_TIME, 0, 1)
-	chargeJumpEvent:FireServer(fraction)
+
+	-- Applied locally: this client owns physics for its own character, so a
+	-- server-set velocity here would just get fought/overridden.
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+	if humanoid and rootPart then
+		local baseVelocity = humanoid.JumpPower > 0 and humanoid.JumpPower or 50
+		local minVelocity = baseVelocity
+		local maxVelocity = baseVelocity * JUMP_BOOST_MULTIPLIER
+		local jumpVelocity = minVelocity + fraction * (maxVelocity - minVelocity)
+
+		local currentVelocity = rootPart.AssemblyLinearVelocity
+		rootPart.AssemblyLinearVelocity = Vector3.new(currentVelocity.X, jumpVelocity, currentVelocity.Z)
+	end
+
+	chargeJumpEvent:FireServer()
 end
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)

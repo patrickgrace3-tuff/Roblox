@@ -20,7 +20,7 @@ local JUMP_BOOST_COUNT = 10
 
 local platformQueues = {} -- [player] = { platform, platform, ... } oldest first
 local lastShotTime = {} -- [player] = os.clock() of last shot
-local jumpBoosts = {} -- [player] = { remaining, baseVelocity }
+local jumpBoosts = {} -- [player] = { remaining }
 
 local function createSpawnArea()
 	local floor = Instance.new("Part")
@@ -60,8 +60,9 @@ end
 
 -- Grants JUMP_BOOST_COUNT charge-jumps. The built-in Jumping state is
 -- disabled entirely so Roblox's default controller can't fire its own weak
--- jump on Space; chargeJumpEvent instead launches the character directly via
--- an upward velocity impulse, sidestepping JumpPower/JumpHeight entirely.
+-- jump on Space. The actual jump velocity is applied client-side (that
+-- player owns physics for their own character); this just tracks the
+-- remaining charge count and permission to use it.
 local function applyJumpBoost(player, humanoid)
 	endJumpBoost(player)
 
@@ -69,32 +70,16 @@ local function applyJumpBoost(player, humanoid)
 
 	local boost = {
 		remaining = JUMP_BOOST_COUNT,
-		baseVelocity = humanoid.JumpPower > 0 and humanoid.JumpPower or 50,
 	}
 	jumpBoosts[player] = boost
 	player:SetAttribute("JumpsRemaining", boost.remaining)
 end
 
-local function performChargeJump(player, chargeFraction)
+local function performChargeJump(player)
 	local boost = jumpBoosts[player]
 	if not boost or boost.remaining <= 0 then
 		return
 	end
-
-	local character = player.Character
-	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-	if not rootPart then
-		return
-	end
-
-	chargeFraction = math.clamp(chargeFraction, 0, 1)
-
-	local minVelocity = boost.baseVelocity
-	local maxVelocity = boost.baseVelocity * JUMP_BOOST_MULTIPLIER
-	local jumpVelocity = minVelocity + chargeFraction * (maxVelocity - minVelocity)
-
-	local currentVelocity = rootPart.AssemblyLinearVelocity
-	rootPart.AssemblyLinearVelocity = Vector3.new(currentVelocity.X, jumpVelocity, currentVelocity.Z)
 
 	boost.remaining -= 1
 	if boost.remaining <= 0 then
@@ -230,12 +215,8 @@ shootEvent.OnServerEvent:Connect(function(player, origin, direction)
 	shootPlatform(player, origin, direction)
 end)
 
-chargeJumpEvent.OnServerEvent:Connect(function(player, chargeFraction)
-	if typeof(chargeFraction) ~= "number" then
-		return
-	end
-
-	performChargeJump(player, chargeFraction)
+chargeJumpEvent.OnServerEvent:Connect(function(player)
+	performChargeJump(player)
 end)
 
 Players.PlayerAdded:Connect(function(player)
