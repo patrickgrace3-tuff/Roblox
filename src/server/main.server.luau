@@ -11,9 +11,12 @@ local PLATFORM_SIZE = Vector3.new(6, 1, 6)
 local MAX_SHOOT_DISTANCE = 300
 local SHOOT_COOLDOWN = 0.15
 local SHAFT_HEIGHT = 200
+local JUMP_BOOST_MULTIPLIER = 5
+local JUMP_BOOST_COUNT = 10
 
 local platformQueues = {} -- [player] = { platform, platform, ... } oldest first
 local lastShotTime = {} -- [player] = os.clock() of last shot
+local jumpBoosts = {} -- [player] = { remaining, defaultJumpPower, connection }
 
 local function createSpawnArea()
 	local floor = Instance.new("Part")
@@ -33,6 +36,73 @@ local function createSpawnArea()
 	spawnLocation.Color = Color3.fromRGB(220, 220, 220)
 	spawnLocation.CFrame = CFrame.new(0, 1, 30) * CFrame.Angles(0, math.pi, 0)
 	spawnLocation.Parent = Workspace
+end
+
+local function endJumpBoost(player)
+	local boost = jumpBoosts[player]
+	if not boost then
+		return
+	end
+
+	if boost.connection then
+		boost.connection:Disconnect()
+	end
+
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		humanoid.JumpPower = boost.defaultJumpPower
+	end
+
+	jumpBoosts[player] = nil
+end
+
+local function applyJumpBoost(player, humanoid)
+	endJumpBoost(player)
+
+	local defaultJumpPower = humanoid.JumpPower
+	humanoid.JumpPower = defaultJumpPower * JUMP_BOOST_MULTIPLIER
+
+	local boost = {
+		remaining = JUMP_BOOST_COUNT,
+		defaultJumpPower = defaultJumpPower,
+	}
+	jumpBoosts[player] = boost
+
+	boost.connection = humanoid.StateChanged:Connect(function(_, newState)
+		if newState ~= Enum.HumanoidStateType.Jumping then
+			return
+		end
+
+		boost.remaining -= 1
+		if boost.remaining <= 0 then
+			endJumpBoost(player)
+		end
+	end)
+end
+
+local function createJumpSpring(position)
+	local pad = Instance.new("Part")
+	pad.Name = "JumpSpring"
+	pad.Size = Vector3.new(6, 1, 6)
+	pad.Anchored = true
+	pad.Material = Enum.Material.Neon
+	pad.Color = Color3.fromRGB(255, 140, 0)
+	pad.CFrame = CFrame.new(position)
+	pad.Parent = Workspace
+
+	pad.Touched:Connect(function(hit)
+		local character = hit.Parent
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		local player = character and Players:GetPlayerFromCharacter(character)
+		if not humanoid or not player then
+			return
+		end
+
+		applyJumpBoost(player, humanoid)
+	end)
+
+	return pad
 end
 
 local function createClimbShaft()
@@ -73,6 +143,7 @@ end
 
 createSpawnArea()
 createClimbShaft()
+createJumpSpring(Vector3.new(0, 1, 18))
 
 local function removeOldestPlatform(player)
 	local queue = platformQueues[player]
@@ -136,6 +207,12 @@ shootEvent.OnServerEvent:Connect(function(player, origin, direction)
 	shootPlatform(player, origin, direction)
 end)
 
+Players.PlayerAdded:Connect(function(player)
+	player.CharacterRemoving:Connect(function()
+		endJumpBoost(player)
+	end)
+end)
+
 Players.PlayerRemoving:Connect(function(player)
 	local queue = platformQueues[player]
 	if queue then
@@ -146,4 +223,5 @@ Players.PlayerRemoving:Connect(function(player)
 
 	platformQueues[player] = nil
 	lastShotTime[player] = nil
+	endJumpBoost(player)
 end)
