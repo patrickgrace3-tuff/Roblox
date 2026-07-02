@@ -11,7 +11,7 @@ local PLATFORM_SIZE = Vector3.new(6, 1, 6)
 local MAX_SHOOT_DISTANCE = 300
 local SHOOT_COOLDOWN = 0.15
 local SHAFT_HEIGHT = 200
-local JUMP_BOOST_MULTIPLIER = 5
+local JUMP_BOOST_MULTIPLIER = 25
 local JUMP_BOOST_COUNT = 10
 
 local platformQueues = {} -- [player] = { platform, platform, ... } oldest first
@@ -55,6 +55,7 @@ local function endJumpBoost(player)
 	end
 
 	jumpBoosts[player] = nil
+	player:SetAttribute("JumpsRemaining", nil)
 end
 
 local function applyJumpBoost(player, humanoid)
@@ -68,6 +69,7 @@ local function applyJumpBoost(player, humanoid)
 		defaultJumpPower = defaultJumpPower,
 	}
 	jumpBoosts[player] = boost
+	player:SetAttribute("JumpsRemaining", boost.remaining)
 
 	boost.connection = humanoid.StateChanged:Connect(function(_, newState)
 		if newState ~= Enum.HumanoidStateType.Jumping then
@@ -77,6 +79,8 @@ local function applyJumpBoost(player, humanoid)
 		boost.remaining -= 1
 		if boost.remaining <= 0 then
 			endJumpBoost(player)
+		else
+			player:SetAttribute("JumpsRemaining", boost.remaining)
 		end
 	end)
 end
