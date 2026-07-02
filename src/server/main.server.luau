@@ -658,17 +658,17 @@ end
 local function createArrowVisual(startPosition, endPosition)
 	local arrow = Instance.new("Part")
 	arrow.Name = "Arrow"
-	arrow.Size = Vector3.new(0.2, 0.2, 3)
+	arrow.Size = Vector3.new(0.3, 0.3, 4)
 	arrow.Anchored = true
 	arrow.CanCollide = false
 	arrow.CanQuery = false
-	arrow.Material = Enum.Material.Wood
-	arrow.Color = Color3.fromRGB(120, 80, 40)
+	arrow.Material = Enum.Material.Neon
+	arrow.Color = Color3.fromRGB(255, 200, 60)
 	arrow.CFrame = CFrame.new(startPosition, endPosition)
 	arrow.Parent = Workspace
 
 	local distance = (endPosition - startPosition).Magnitude
-	local duration = math.clamp(distance / 200, 0.05, 0.5)
+	local duration = math.clamp(distance / 120, 0.15, 0.6)
 
 	local tween = TweenService:Create(
 		arrow,
@@ -687,7 +687,8 @@ local function performBowShot(player, origin, direction)
 	end
 
 	local character = player.Character
-	if not character then
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+	if not character or not rootPart then
 		return
 	end
 
@@ -707,7 +708,11 @@ local function performBowShot(player, origin, direction)
 		end
 	end
 
-	createArrowVisual(origin, endPosition)
+	-- Visually starts from the character (not the raw camera position, which
+	-- can be behind/above the player and easy to miss) so the shot is
+	-- clearly visible flying from the player toward the impact point.
+	local visualStart = rootPart.Position + Vector3.new(0, 1, 0)
+	createArrowVisual(visualStart, endPosition)
 end
 
 local function createTorch(position)

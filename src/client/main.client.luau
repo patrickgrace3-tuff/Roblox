@@ -179,41 +179,102 @@ if player.Character then
 end
 player.CharacterAdded:Connect(hookHealthBar)
 
-local abilityLabel = Instance.new("TextLabel")
-abilityLabel.Name = "AbilityLabel"
-abilityLabel.AnchorPoint = Vector2.new(1, 1)
-abilityLabel.Position = UDim2.new(0.98, 0, 0.98, 0)
-abilityLabel.Size = UDim2.new(0, 260, 0, 30)
-abilityLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-abilityLabel.BackgroundTransparency = 0.3
-abilityLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-abilityLabel.Font = Enum.Font.GothamBold
-abilityLabel.TextScaled = true
-abilityLabel.Text = ""
-abilityLabel.Visible = false
-abilityLabel.Parent = screenGui
+-- WoW-style action bar: a row of numbered slots bottom-center, each
+-- glowing while its ability is active.
+local SLOT_SIZE = 64
+local SLOT_GAP = 8
 
-local function updateAbilityLabel()
-	local autoSwinging = player:GetAttribute("IsAutoSwinging")
-	local shieldActive = player:GetAttribute("ShieldActive")
+local actionBar = Instance.new("Frame")
+actionBar.Name = "ActionBar"
+actionBar.AnchorPoint = Vector2.new(0.5, 1)
+actionBar.Position = UDim2.new(0.5, 0, 1, -16)
+actionBar.Size = UDim2.new(0, SLOT_SIZE * 3 + SLOT_GAP * 2, 0, SLOT_SIZE)
+actionBar.BackgroundTransparency = 1
+actionBar.Parent = screenGui
 
-	if autoSwinging and shieldActive then
-		abilityLabel.Text = "Auto-Swing: ON | Shield: Active"
-		abilityLabel.TextColor3 = Color3.fromRGB(120, 220, 255)
-	elseif autoSwinging then
-		abilityLabel.Text = "Auto-Swing: ON (press 1 to stop)"
-		abilityLabel.TextColor3 = Color3.fromRGB(255, 220, 120)
-	elseif shieldActive then
-		abilityLabel.Text = "Shield: Active"
-		abilityLabel.TextColor3 = Color3.fromRGB(120, 220, 255)
-	end
+local INACTIVE_BORDER_COLOR = Color3.fromRGB(90, 90, 90)
 
-	abilityLabel.Visible = autoSwinging == true or shieldActive == true
+local function createActionSlot(index, keyText, nameText, iconColor)
+	local slot = Instance.new("Frame")
+	slot.Name = "Slot" .. index
+	slot.Size = UDim2.new(0, SLOT_SIZE, 0, SLOT_SIZE)
+	slot.Position = UDim2.new(0, (index - 1) * (SLOT_SIZE + SLOT_GAP), 0, 0)
+	slot.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+	slot.BackgroundTransparency = 0.15
+	slot.BorderSizePixel = 0
+	slot.Parent = actionBar
+
+	local border = Instance.new("UIStroke")
+	border.Name = "Border"
+	border.Thickness = 2
+	border.Color = INACTIVE_BORDER_COLOR
+	border.Parent = slot
+
+	local icon = Instance.new("Frame")
+	icon.Name = "Icon"
+	icon.Size = UDim2.new(1, -8, 1, -24)
+	icon.Position = UDim2.new(0, 4, 0, 4)
+	icon.BackgroundColor3 = iconColor
+	icon.BorderSizePixel = 0
+	icon.Parent = slot
+
+	local nameLabel = Instance.new("TextLabel")
+	nameLabel.Name = "NameLabel"
+	nameLabel.Size = UDim2.new(1, 0, 0, 16)
+	nameLabel.Position = UDim2.new(0, 0, 1, -16)
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	nameLabel.Font = Enum.Font.GothamBold
+	nameLabel.TextScaled = true
+	nameLabel.Text = nameText
+	nameLabel.Parent = slot
+
+	local keyLabel = Instance.new("TextLabel")
+	keyLabel.Name = "KeyLabel"
+	keyLabel.Size = UDim2.new(0, 18, 0, 18)
+	keyLabel.Position = UDim2.new(0, 2, 0, 2)
+	keyLabel.BackgroundTransparency = 1
+	keyLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
+	keyLabel.Font = Enum.Font.GothamBold
+	keyLabel.TextScaled = true
+	keyLabel.Text = keyText
+	keyLabel.ZIndex = 2
+	keyLabel.Parent = slot
+
+	return border
 end
 
-player:GetAttributeChangedSignal("IsAutoSwinging"):Connect(updateAbilityLabel)
-player:GetAttributeChangedSignal("ShieldActive"):Connect(updateAbilityLabel)
-updateAbilityLabel()
+local swordBorder = createActionSlot(1, "1", "SWORD", Color3.fromRGB(180, 180, 190))
+local shieldBorder = createActionSlot(2, "2", "SHIELD", Color3.fromRGB(150, 40, 40))
+local bowBorder = createActionSlot(3, "3", "BOW", Color3.fromRGB(150, 110, 60))
+
+local ACTIVE_BORDER_THICKNESS = 3
+local INACTIVE_BORDER_THICKNESS = 2
+local SWORD_ACTIVE_COLOR = Color3.fromRGB(255, 220, 60)
+local SHIELD_ACTIVE_COLOR = Color3.fromRGB(80, 200, 255)
+
+local function updateActionBar()
+	local autoSwinging = player:GetAttribute("IsAutoSwinging")
+	swordBorder.Color = autoSwinging and SWORD_ACTIVE_COLOR or INACTIVE_BORDER_COLOR
+	swordBorder.Thickness = autoSwinging and ACTIVE_BORDER_THICKNESS or INACTIVE_BORDER_THICKNESS
+
+	local shieldActive = player:GetAttribute("ShieldActive")
+	shieldBorder.Color = shieldActive and SHIELD_ACTIVE_COLOR or INACTIVE_BORDER_COLOR
+	shieldBorder.Thickness = shieldActive and ACTIVE_BORDER_THICKNESS or INACTIVE_BORDER_THICKNESS
+end
+
+player:GetAttributeChangedSignal("IsAutoSwinging"):Connect(updateActionBar)
+player:GetAttributeChangedSignal("ShieldActive"):Connect(updateActionBar)
+updateActionBar()
+
+local function flashBowSlot()
+	bowBorder.Color = SWORD_ACTIVE_COLOR
+	bowBorder.Thickness = ACTIVE_BORDER_THICKNESS
+	task.delay(0.15, function()
+		bowBorder.Color = INACTIVE_BORDER_COLOR
+		bowBorder.Thickness = INACTIVE_BORDER_THICKNESS
+	end)
+end
 
 local function shoot()
 	local camera = Workspace.CurrentCamera
@@ -237,6 +298,7 @@ local function shootArrow()
 	local ray = camera:ViewportPointToRay(mouseLocation.X, mouseLocation.Y)
 
 	shootArrowEvent:FireServer(ray.Origin, ray.Direction)
+	flashBowSlot()
 end
 
 local isCharging = false
