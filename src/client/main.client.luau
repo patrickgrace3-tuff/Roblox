@@ -18,14 +18,14 @@ local function tryGrab()
 		return
 	end
 
-	local origin = camera.CFrame.Position
-	local direction = camera.CFrame.LookVector * GRAB_RANGE
+	local mouseLocation = UserInputService:GetMouseLocation()
+	local ray = camera:ViewportPointToRay(mouseLocation.X, mouseLocation.Y)
 
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.FilterDescendantsInstances = { character }
 
-	local result = Workspace:Raycast(origin, direction, params)
+	local result = Workspace:Raycast(ray.Origin, ray.Direction * GRAB_RANGE, params)
 	if result and result.Instance:GetAttribute("Grabbable") then
 		grabEvent:FireServer(result.Instance)
 	end
@@ -36,7 +36,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		return
 	end
 
-	if input.KeyCode == Enum.KeyCode.E then
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
 		tryGrab()
 	elseif input.KeyCode == Enum.KeyCode.T then
 		throwEvent:FireServer()
