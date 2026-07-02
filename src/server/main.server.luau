@@ -21,6 +21,11 @@ local function loadArmPickupTemplate()
 
 	local template = container:GetChildren()[1]
 	container:Destroy()
+
+	if not template then
+		warn("Arm pickup asset " .. ARM_PICKUP_ASSET_ID .. " loaded but contained no objects")
+	end
+
 	return template
 end
 
@@ -83,27 +88,31 @@ end
 local function createArmPickup(position)
 	if armPickupTemplate then
 		local pickup = armPickupTemplate:Clone()
-		for _, part in pickup:GetDescendants() do
-			if part:IsA("BasePart") then
-				part.Anchored = true
-				part.CanCollide = false
-			end
-		end
+		local anchorPart = getTemplatePart(pickup)
 
-		if pickup:IsA("BasePart") then
-			pickup.Position = position
-		elseif pickup.PrimaryPart then
-			pickup:SetPrimaryPartCFrame(CFrame.new(position))
-		else
-			local anchorPart = getTemplatePart(pickup)
-			if anchorPart then
+		if anchorPart then
+			for _, part in pickup:GetDescendants() do
+				if part:IsA("BasePart") then
+					part.Anchored = true
+					part.CanCollide = false
+				end
+			end
+
+			if pickup:IsA("BasePart") then
+				pickup.Position = position
+			elseif pickup.PrimaryPart then
+				pickup:SetPrimaryPartCFrame(CFrame.new(position))
+			else
 				anchorPart.CFrame = CFrame.new(position)
 			end
+
+			pickup.Parent = Workspace
+			table.insert(armPickups, pickup)
+			return
 		end
 
-		pickup.Parent = Workspace
-		table.insert(armPickups, pickup)
-		return
+		warn("Arm pickup template has no usable BasePart; falling back to placeholder box")
+		pickup:Destroy()
 	end
 
 	local pickup = Instance.new("Part")
