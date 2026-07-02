@@ -9,6 +9,8 @@ local player = Players.LocalPlayer
 local shootEvent = ReplicatedStorage:WaitForChild("ShootPlatform")
 local chargeJumpEvent = ReplicatedStorage:WaitForChild("ChargeJump")
 local toggleFlightEvent = ReplicatedStorage:WaitForChild("ToggleFlight")
+local swordSwingEvent = ReplicatedStorage:WaitForChild("SwordSwing")
+local setBlockingEvent = ReplicatedStorage:WaitForChild("SetBlocking")
 
 local MAX_CHARGE_TIME = 1.2
 local JUMP_BOOST_MULTIPLIER = 5
@@ -127,6 +129,55 @@ end
 player:GetAttributeChangedSignal("IsFlying"):Connect(updateFlightState)
 updateFlightState()
 
+local healthBarBackground = Instance.new("Frame")
+healthBarBackground.Name = "HealthBarBackground"
+healthBarBackground.AnchorPoint = Vector2.new(0, 1)
+healthBarBackground.Position = UDim2.new(0.02, 0, 0.98, 0)
+healthBarBackground.Size = UDim2.new(0, 240, 0, 26)
+healthBarBackground.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+healthBarBackground.BackgroundTransparency = 0.3
+healthBarBackground.Parent = screenGui
+
+local healthBarFill = Instance.new("Frame")
+healthBarFill.Name = "HealthBarFill"
+healthBarFill.BackgroundColor3 = Color3.fromRGB(220, 40, 40)
+healthBarFill.BorderSizePixel = 0
+healthBarFill.Size = UDim2.new(1, 0, 1, 0)
+healthBarFill.Parent = healthBarBackground
+
+local healthLabel = Instance.new("TextLabel")
+healthLabel.Name = "HealthLabel"
+healthLabel.BackgroundTransparency = 1
+healthLabel.Size = UDim2.new(1, 0, 1, 0)
+healthLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+healthLabel.Font = Enum.Font.GothamBold
+healthLabel.TextScaled = true
+healthLabel.Text = ""
+healthLabel.Parent = healthBarBackground
+
+local function updateHealthBar()
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		return
+	end
+
+	local fraction = humanoid.MaxHealth > 0 and (humanoid.Health / humanoid.MaxHealth) or 0
+	healthBarFill.Size = UDim2.new(math.clamp(fraction, 0, 1), 0, 1, 0)
+	healthLabel.Text = math.ceil(humanoid.Health) .. " / " .. math.ceil(humanoid.MaxHealth)
+end
+
+local function hookHealthBar(character)
+	local humanoid = character:WaitForChild("Humanoid")
+	humanoid.HealthChanged:Connect(updateHealthBar)
+	updateHealthBar()
+end
+
+if player.Character then
+	hookHealthBar(player.Character)
+end
+player.CharacterAdded:Connect(hookHealthBar)
+
 local function shoot()
 	local camera = Workspace.CurrentCamera
 	if not camera then
@@ -200,7 +251,13 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	end
 
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		shoot()
+		if player:GetAttribute("HasSword") then
+			swordSwingEvent:FireServer()
+		else
+			shoot()
+		end
+	elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
+		setBlockingEvent:FireServer(true)
 	elseif input.KeyCode == Enum.KeyCode.Space then
 		beginCharge()
 	elseif input.KeyCode == Enum.KeyCode.F then
@@ -211,5 +268,7 @@ end)
 UserInputService.InputEnded:Connect(function(input)
 	if input.KeyCode == Enum.KeyCode.Space then
 		releaseCharge()
+	elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
+		setBlockingEvent:FireServer(false)
 	end
 end)

@@ -2,6 +2,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local Lighting = game:GetService("Lighting")
+local RunService = game:GetService("RunService")
 
 local shootEvent = Instance.new("RemoteEvent")
 shootEvent.Name = "ShootPlatform"
@@ -15,6 +16,14 @@ local toggleFlightEvent = Instance.new("RemoteEvent")
 toggleFlightEvent.Name = "ToggleFlight"
 toggleFlightEvent.Parent = ReplicatedStorage
 
+local swordSwingEvent = Instance.new("RemoteEvent")
+swordSwingEvent.Name = "SwordSwing"
+swordSwingEvent.Parent = ReplicatedStorage
+
+local setBlockingEvent = Instance.new("RemoteEvent")
+setBlockingEvent.Name = "SetBlocking"
+setBlockingEvent.Parent = ReplicatedStorage
+
 local MAX_PLATFORMS_PER_PLAYER = 8
 local PLATFORM_SIZE = Vector3.new(6, 1, 6)
 local MAX_SHOOT_DISTANCE = 300
@@ -25,11 +34,29 @@ local JUMP_BOOST_COUNT = 10
 local BEACH_CENTER_X = 90
 local DEFAULT_WALK_SPEED = 16
 local FLY_WALK_SPEED = 50
+local DUNGEON_CENTER_X = 180
+
+local MOB_HEALTH = 30
+local MOB_DAMAGE = 8
+local MOB_SPEED = 12
+local MOB_DETECT_RANGE = 60
+local MOB_ATTACK_RANGE = 4
+local MOB_ATTACK_COOLDOWN = 1.2
+
+local BOSS_HEALTH = 150
+local BOSS_DAMAGE = 20
+local BOSS_SPEED = 12
+local BOSS_ATTACK_RANGE = 6
+
+local SWORD_DAMAGE = 15
+local SWORD_RANGE = 7
+local SHIELD_DAMAGE_REDUCTION = 0.6
 
 local platformQueues = {} -- [player] = { platform, platform, ... } oldest first
 local lastShotTime = {} -- [player] = os.clock() of last shot
 local jumpBoosts = {} -- [player] = { remaining }
 local flyingPlayers = {} -- [player] = true while actively flying
+local mobs = {} -- [mobModel] = { health, maxHealth, damage, speed, attackRange, detectRange, attackCooldown, lastAttackTime, isBoss }
 
 local function setupJungleAtmosphere()
 	Lighting.Ambient = Color3.fromRGB(55, 75, 45)
@@ -255,6 +282,424 @@ local function createMagicCarpetPickup(position)
 	end)
 
 	return pad
+end
+
+local function findNearestPlayer(position, maxDistance)
+	local nearestPlayer, nearestDistance = nil, maxDistance
+
+	for _, plr in ipairs(Players:GetPlayers()) do
+		local character = plr.Character
+		local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if rootPart and humanoid and humanoid.Health > 0 then
+			local distance = (rootPart.Position - position).Magnitude
+			if distance < nearestDistance then
+				nearestPlayer = plr
+				nearestDistance = distance
+			end
+		end
+	end
+
+	return nearestPlayer, nearestDistance
+end
+
+local function damagePlayer(player, amount)
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not humanoid or humanoid.Health <= 0 then
+		return
+	end
+
+	if player:GetAttribute("IsBlocking") then
+		amount *= 1 - SHIELD_DAMAGE_REDUCTION
+	end
+
+	humanoid:TakeDamage(amount)
+end
+
+local function createVictoryPedestal(position)
+	local pedestal = Instance.new("Part")
+	pedestal.Name = "VictoryPedestal"
+	pedestal.Size = Vector3.new(8, 1, 8)
+	pedestal.Anchored = true
+	pedestal.Material = Enum.Material.Neon
+	pedestal.Color = Color3.fromRGB(255, 215, 0)
+	pedestal.CFrame = CFrame.new(position.X, 0.5, position.Z)
+	pedestal.Parent = Workspace
+end
+
+local function damageMob(model, amount)
+	local data = mobs[model]
+	if not data then
+		return
+	end
+
+	data.health -= amount
+	if data.health <= 0 then
+		mobs[model] = nil
+		local position = model.PrimaryPart and model.PrimaryPart.Position or Vector3.new()
+		local isBoss = data.isBoss
+		model:Destroy()
+
+		if isBoss then
+			createVictoryPedestal(position)
+		end
+	end
+end
+
+-- Mobs are Anchored so they're simple to move via CFrame each tick (no
+-- physics/collision fighting), and never fall or get stuck.
+local function createMob(position, isBoss)
+	local model = Instance.new("Model")
+	model.Name = isBoss and "AngryChefBoss" or "Mob"
+
+	local bodySize = isBoss and Vector3.new(6, 9, 4) or Vector3.new(3, 5, 2)
+	local bodyColor = isBoss and Color3.fromRGB(210, 70, 70) or Color3.fromRGB(90, 30, 30)
+
+	local body = Instance.new("Part")
+	body.Name = "Body"
+	body.Size = bodySize
+	body.Anchored = true
+	body.CanCollide = false
+	body.Material = Enum.Material.SmoothPlastic
+	body.Color = bodyColor
+	body.CFrame = CFrame.new(position + Vector3.new(0, bodySize.Y / 2, 0))
+	body.Parent = model
+
+	local headSize = bodySize.X * 0.9
+	local head = Instance.new("Part")
+	head.Name = "Head"
+	head.Shape = Enum.PartType.Ball
+	head.Size = Vector3.new(headSize, headSize, headSize)
+	head.Anchored = true
+	head.CanCollide = false
+	head.Material = Enum.Material.SmoothPlastic
+	head.Color = Color3.fromRGB(230, 190, 160)
+	head.CFrame = body.CFrame * CFrame.new(0, bodySize.Y / 2 + headSize / 2 - 0.5, 0)
+	head.Parent = model
+
+	if isBoss then
+		local handle = Instance.new("Part")
+		handle.Name = "SpoonHandle"
+		handle.Size = Vector3.new(0.6, 6, 0.6)
+		handle.Anchored = true
+		handle.CanCollide = false
+		handle.Material = Enum.Material.Metal
+		handle.Color = Color3.fromRGB(200, 200, 210)
+		handle.CFrame = body.CFrame * CFrame.new(bodySize.X / 2 + 1, 1, 0)
+		handle.Parent = model
+
+		local bowl = Instance.new("Part")
+		bowl.Name = "SpoonBowl"
+		bowl.Shape = Enum.PartType.Ball
+		bowl.Size = Vector3.new(2, 1.2, 1.6)
+		bowl.Anchored = true
+		bowl.CanCollide = false
+		bowl.Material = Enum.Material.Metal
+		bowl.Color = Color3.fromRGB(200, 200, 210)
+		bowl.CFrame = handle.CFrame * CFrame.new(0, 3.5, 0)
+		bowl.Parent = model
+
+		local nameTag = Instance.new("BillboardGui")
+		nameTag.Name = "NameTag"
+		nameTag.Size = UDim2.new(0, 220, 0, 40)
+		nameTag.StudsOffset = Vector3.new(0, bodySize.Y / 2 + headSize / 2 + 2, 0)
+		nameTag.AlwaysOnTop = true
+		nameTag.Adornee = body
+		nameTag.Parent = body
+
+		local nameLabel = Instance.new("TextLabel")
+		nameLabel.Size = UDim2.new(1, 0, 1, 0)
+		nameLabel.BackgroundTransparency = 1
+		nameLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+		nameLabel.Font = Enum.Font.GothamBold
+		nameLabel.TextScaled = true
+		nameLabel.Text = "Nonna Fury"
+		nameLabel.Parent = nameTag
+	end
+
+	model.PrimaryPart = body
+	model.Parent = Workspace
+
+	mobs[model] = {
+		health = isBoss and BOSS_HEALTH or MOB_HEALTH,
+		maxHealth = isBoss and BOSS_HEALTH or MOB_HEALTH,
+		damage = isBoss and BOSS_DAMAGE or MOB_DAMAGE,
+		speed = isBoss and BOSS_SPEED or MOB_SPEED,
+		attackRange = isBoss and BOSS_ATTACK_RANGE or MOB_ATTACK_RANGE,
+		detectRange = MOB_DETECT_RANGE,
+		attackCooldown = MOB_ATTACK_COOLDOWN,
+		lastAttackTime = 0,
+		isBoss = isBoss,
+	}
+
+	return model
+end
+
+RunService.Heartbeat:Connect(function(deltaTime)
+	for model, data in pairs(mobs) do
+		if not model.Parent or not model.PrimaryPart then
+			mobs[model] = nil
+			continue
+		end
+
+		local mobPosition = model.PrimaryPart.Position
+		local targetPlayer, distance = findNearestPlayer(mobPosition, data.detectRange)
+		if not targetPlayer then
+			continue
+		end
+
+		local targetRoot = targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+		if not targetRoot then
+			continue
+		end
+
+		if distance > data.attackRange then
+			local direction = targetRoot.Position - mobPosition
+			direction = Vector3.new(direction.X, 0, direction.Z)
+			if direction.Magnitude > 0.1 then
+				direction = direction.Unit
+				local newPosition = mobPosition + direction * data.speed * deltaTime
+				model:PivotTo(CFrame.new(newPosition, newPosition + direction))
+			end
+		else
+			local now = os.clock()
+			if now - data.lastAttackTime >= data.attackCooldown then
+				data.lastAttackTime = now
+				damagePlayer(targetPlayer, data.damage)
+			end
+		end
+	end
+end)
+
+local function getHandParts(character)
+	local rightHand = character:FindFirstChild("RightHand") or character:FindFirstChild("Right Arm")
+	local leftHand = character:FindFirstChild("LeftHand") or character:FindFirstChild("Left Arm")
+	return rightHand, leftHand
+end
+
+local function equipWeapons(character)
+	if character:FindFirstChild("SwordVisual") then
+		return
+	end
+
+	local rightHand, leftHand = getHandParts(character)
+	if not rightHand or not leftHand then
+		return
+	end
+
+	local sword = Instance.new("Part")
+	sword.Name = "SwordVisual"
+	sword.Size = Vector3.new(0.6, 4, 0.3)
+	sword.Material = Enum.Material.Metal
+	sword.Color = Color3.fromRGB(210, 210, 220)
+	sword.CanCollide = false
+	sword.Massless = true
+	sword.CFrame = rightHand.CFrame * CFrame.new(0, -2, 0)
+	sword.Parent = character
+
+	local swordWeld = Instance.new("WeldConstraint")
+	swordWeld.Part0 = rightHand
+	swordWeld.Part1 = sword
+	swordWeld.Parent = sword
+
+	local shield = Instance.new("Part")
+	shield.Name = "ShieldVisual"
+	shield.Size = Vector3.new(0.3, 3, 2.4)
+	shield.Material = Enum.Material.Metal
+	shield.Color = Color3.fromRGB(120, 30, 30)
+	shield.CanCollide = false
+	shield.Massless = true
+	shield.CFrame = leftHand.CFrame * CFrame.new(0, -1, 0)
+	shield.Parent = character
+
+	local shieldWeld = Instance.new("WeldConstraint")
+	shieldWeld.Part0 = leftHand
+	shieldWeld.Part1 = shield
+	shieldWeld.Parent = shield
+end
+
+local function createWeaponRack(position)
+	local rack = Instance.new("Part")
+	rack.Name = "WeaponRack"
+	rack.Size = Vector3.new(4, 5, 1)
+	rack.Anchored = true
+	rack.Material = Enum.Material.Wood
+	rack.Color = Color3.fromRGB(90, 60, 40)
+	rack.CFrame = CFrame.new(position)
+	rack.Parent = Workspace
+
+	rack.Touched:Connect(function(hit)
+		local character = hit.Parent
+		local player = character and Players:GetPlayerFromCharacter(character)
+		if not player then
+			return
+		end
+
+		if not player:GetAttribute("HasSword") then
+			player:SetAttribute("HasSword", true)
+			equipWeapons(character)
+		end
+	end)
+
+	return rack
+end
+
+local function performSwordSwing(player)
+	if not player:GetAttribute("HasSword") then
+		return
+	end
+
+	local character = player.Character
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+	if not rootPart then
+		return
+	end
+
+	local facing = rootPart.CFrame.LookVector
+
+	for model, _ in pairs(mobs) do
+		if not model.PrimaryPart then
+			continue
+		end
+
+		local toMob = model.PrimaryPart.Position - rootPart.Position
+		local distance = toMob.Magnitude
+		if distance <= SWORD_RANGE and distance > 0 then
+			local direction = toMob.Unit
+			if direction:Dot(facing) > 0.2 then
+				damageMob(model, SWORD_DAMAGE)
+			end
+		end
+	end
+end
+
+local function createTorch(position)
+	local torch = Instance.new("Part")
+	torch.Name = "Torch"
+	torch.Size = Vector3.new(0.6, 1.2, 0.6)
+	torch.Anchored = true
+	torch.CanCollide = false
+	torch.Material = Enum.Material.Neon
+	torch.Color = Color3.fromRGB(255, 140, 40)
+	torch.CFrame = CFrame.new(position)
+	torch.Parent = Workspace
+
+	local light = Instance.new("PointLight")
+	light.Color = Color3.fromRGB(255, 150, 60)
+	light.Range = 20
+	light.Brightness = 2
+	light.Parent = torch
+end
+
+local function createDungeonLevel()
+	local corridorLength = 100
+	local corridorWidth = 16
+	local wallHeight = 14
+
+	local floor = Instance.new("Part")
+	floor.Name = "DungeonFloor"
+	floor.Size = Vector3.new(corridorWidth, 1, corridorLength)
+	floor.Anchored = true
+	floor.Material = Enum.Material.Slate
+	floor.Color = Color3.fromRGB(60, 58, 62)
+	floor.CFrame = CFrame.new(DUNGEON_CENTER_X, 0, corridorLength / 2)
+	floor.Parent = Workspace
+
+	local leftWall = Instance.new("Part")
+	leftWall.Name = "DungeonWallLeft"
+	leftWall.Size = Vector3.new(1, wallHeight, corridorLength)
+	leftWall.Anchored = true
+	leftWall.Material = Enum.Material.Slate
+	leftWall.Color = Color3.fromRGB(45, 43, 48)
+	leftWall.CFrame = CFrame.new(DUNGEON_CENTER_X - corridorWidth / 2, wallHeight / 2, corridorLength / 2)
+	leftWall.Parent = Workspace
+
+	local rightWall = leftWall:Clone()
+	rightWall.Name = "DungeonWallRight"
+	rightWall.CFrame = CFrame.new(DUNGEON_CENTER_X + corridorWidth / 2, wallHeight / 2, corridorLength / 2)
+	rightWall.Parent = Workspace
+
+	local ceiling = Instance.new("Part")
+	ceiling.Name = "DungeonCeiling"
+	ceiling.Size = Vector3.new(corridorWidth, 1, corridorLength)
+	ceiling.Anchored = true
+	ceiling.Material = Enum.Material.Slate
+	ceiling.Color = Color3.fromRGB(35, 33, 38)
+	ceiling.CFrame = CFrame.new(DUNGEON_CENTER_X, wallHeight, corridorLength / 2)
+	ceiling.Parent = Workspace
+
+	local entranceGate = Instance.new("Part")
+	entranceGate.Name = "DungeonEntrance"
+	entranceGate.Size = Vector3.new(corridorWidth + 4, 1, 4)
+	entranceGate.Anchored = true
+	entranceGate.Material = Enum.Material.Cobblestone
+	entranceGate.Color = Color3.fromRGB(80, 78, 82)
+	entranceGate.CFrame = CFrame.new(DUNGEON_CENTER_X, 0, -2)
+	entranceGate.Parent = Workspace
+
+	for z = 0, corridorLength, 20 do
+		createTorch(Vector3.new(DUNGEON_CENTER_X - corridorWidth / 2 + 0.5, 8, z))
+		createTorch(Vector3.new(DUNGEON_CENTER_X + corridorWidth / 2 - 0.5, 8, z))
+	end
+
+	local bossRoomLength = 40
+	local bossRoomWidth = 36
+	local bossWallHeight = 24
+
+	local bossFloor = Instance.new("Part")
+	bossFloor.Name = "BossRoomFloor"
+	bossFloor.Size = Vector3.new(bossRoomWidth, 1, bossRoomLength)
+	bossFloor.Anchored = true
+	bossFloor.Material = Enum.Material.Slate
+	bossFloor.Color = Color3.fromRGB(70, 40, 40)
+	bossFloor.CFrame = CFrame.new(DUNGEON_CENTER_X, 0, corridorLength + bossRoomLength / 2)
+	bossFloor.Parent = Workspace
+
+	local bossBackWall = Instance.new("Part")
+	bossBackWall.Name = "BossRoomBackWall"
+	bossBackWall.Size = Vector3.new(bossRoomWidth, bossWallHeight, 1)
+	bossBackWall.Anchored = true
+	bossBackWall.Material = Enum.Material.Slate
+	bossBackWall.Color = Color3.fromRGB(45, 43, 48)
+	bossBackWall.CFrame = CFrame.new(DUNGEON_CENTER_X, bossWallHeight / 2, corridorLength + bossRoomLength)
+	bossBackWall.Parent = Workspace
+
+	local bossLeftWall = Instance.new("Part")
+	bossLeftWall.Name = "BossRoomWallLeft"
+	bossLeftWall.Size = Vector3.new(1, bossWallHeight, bossRoomLength)
+	bossLeftWall.Anchored = true
+	bossLeftWall.Material = Enum.Material.Slate
+	bossLeftWall.Color = Color3.fromRGB(45, 43, 48)
+	bossLeftWall.CFrame = CFrame.new(DUNGEON_CENTER_X - bossRoomWidth / 2, bossWallHeight / 2, corridorLength + bossRoomLength / 2)
+	bossLeftWall.Parent = Workspace
+
+	local bossRightWall = bossLeftWall:Clone()
+	bossRightWall.Name = "BossRoomWallRight"
+	bossRightWall.CFrame = CFrame.new(DUNGEON_CENTER_X + bossRoomWidth / 2, bossWallHeight / 2, corridorLength + bossRoomLength / 2)
+	bossRightWall.Parent = Workspace
+
+	createTorch(Vector3.new(DUNGEON_CENTER_X - bossRoomWidth / 2 + 0.5, 10, corridorLength + bossRoomLength / 2))
+	createTorch(Vector3.new(DUNGEON_CENTER_X + bossRoomWidth / 2 - 0.5, 10, corridorLength + bossRoomLength / 2))
+
+	local spawnLocation = Instance.new("SpawnLocation")
+	spawnLocation.Name = "DungeonSpawn"
+	spawnLocation.Size = Vector3.new(6, 1, 6)
+	spawnLocation.Anchored = true
+	spawnLocation.Material = Enum.Material.Cobblestone
+	spawnLocation.Color = Color3.fromRGB(90, 88, 92)
+	spawnLocation.CFrame = CFrame.new(DUNGEON_CENTER_X, 1, 4)
+	spawnLocation.Parent = Workspace
+
+	createWeaponRack(Vector3.new(DUNGEON_CENTER_X - 5, 2.5, 6))
+
+	local mobPositionsZ = { 20, 35, 50, 65, 80 }
+	for _, z in ipairs(mobPositionsZ) do
+		local xOffset = (math.random() - 0.5) * (corridorWidth - 4)
+		createMob(Vector3.new(DUNGEON_CENTER_X + xOffset, 0, z), false)
+	end
+
+	createMob(Vector3.new(DUNGEON_CENTER_X, 0, corridorLength + bossRoomLength / 2), true)
 end
 
 local TRUNK_CANOPY_COLORS = {
@@ -487,6 +932,8 @@ createBeachSpawnArea()
 createBeachClimbArea()
 createJumpSpring(Vector3.new(BEACH_CENTER_X, 1, 18))
 
+createDungeonLevel()
+
 local function removeOldestPlatform(player)
 	local queue = platformQueues[player]
 	if not queue or #queue == 0 then
@@ -561,7 +1008,29 @@ toggleFlightEvent.OnServerEvent:Connect(function(player)
 	setFlying(player, not flyingPlayers[player])
 end)
 
+swordSwingEvent.OnServerEvent:Connect(function(player)
+	performSwordSwing(player)
+end)
+
+setBlockingEvent.OnServerEvent:Connect(function(player, blocking)
+	if typeof(blocking) ~= "boolean" then
+		return
+	end
+
+	if not player:GetAttribute("HasSword") then
+		return
+	end
+
+	player:SetAttribute("IsBlocking", blocking or nil)
+end)
+
 Players.PlayerAdded:Connect(function(player)
+	player.CharacterAdded:Connect(function(character)
+		if player:GetAttribute("HasSword") then
+			equipWeapons(character)
+		end
+	end)
+
 	player.CharacterRemoving:Connect(function()
 		endJumpBoost(player)
 		flyingPlayers[player] = nil
