@@ -6,17 +6,21 @@ local shootEvent = Instance.new("RemoteEvent")
 shootEvent.Name = "ShootPlatform"
 shootEvent.Parent = ReplicatedStorage
 
+local chargeJumpEvent = Instance.new("RemoteEvent")
+chargeJumpEvent.Name = "ChargeJump"
+chargeJumpEvent.Parent = ReplicatedStorage
+
 local MAX_PLATFORMS_PER_PLAYER = 8
 local PLATFORM_SIZE = Vector3.new(6, 1, 6)
 local MAX_SHOOT_DISTANCE = 300
 local SHOOT_COOLDOWN = 0.15
 local SHAFT_HEIGHT = 200
-local JUMP_BOOST_MULTIPLIER = 15
+local JUMP_BOOST_MULTIPLIER = 5
 local JUMP_BOOST_COUNT = 10
 
 local platformQueues = {} -- [player] = { platform, platform, ... } oldest first
 local lastShotTime = {} -- [player] = os.clock() of last shot
-local jumpBoosts = {} -- [player] = { remaining, defaultJumpPower, connection }
+local jumpBoosts = {} -- [player] = { remaining, defaultJumpPower, defaultUseJumpPower }
 
 local function createSpawnArea()
 	local floor = Instance.new("Part")
@@ -44,10 +48,6 @@ local function endJumpBoost(player)
 		return
 	end
 
-	if boost.connection then
-		boost.connection:Disconnect()
-	end
-
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if humanoid then
@@ -59,6 +59,9 @@ local function endJumpBoost(player)
 	player:SetAttribute("JumpsRemaining", nil)
 end
 
+-- Grants JUMP_BOOST_COUNT charge-jumps. While active, normal auto-jump is
+-- suppressed (JumpPower held at 0) so the only way to jump is via
+-- chargeJumpEvent, which sets a one-shot JumpPower based on hold duration.
 local function applyJumpBoost(player, humanoid)
 	endJumpBoost(player)
 
@@ -68,7 +71,7 @@ local function applyJumpBoost(player, humanoid)
 	humanoid.UseJumpPower = true
 
 	local defaultJumpPower = humanoid.JumpPower
-	humanoid.JumpPower = defaultJumpPower * JUMP_BOOST_MULTIPLIER
+	humanoid.JumpPower = 0
 
 	local boost = {
 		remaining = JUMP_BOOST_COUNT,
@@ -77,19 +80,42 @@ local function applyJumpBoost(player, humanoid)
 	}
 	jumpBoosts[player] = boost
 	player:SetAttribute("JumpsRemaining", boost.remaining)
+end
 
-	boost.connection = humanoid.StateChanged:Connect(function(_, newState)
-		if newState ~= Enum.HumanoidStateType.Jumping then
-			return
-		end
+local function performChargeJump(player, chargeFraction)
+	local boost = jumpBoosts[player]
+	if not boost or boost.remaining <= 0 then
+		return
+	end
 
-		boost.remaining -= 1
-		if boost.remaining <= 0 then
-			endJumpBoost(player)
-		else
-			player:SetAttribute("JumpsRemaining", boost.remaining)
-		end
-	end)
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		return
+	end
+
+	if humanoid:GetState() == Enum.HumanoidStateType.Freefall then
+		return
+	end
+
+	chargeFraction = math.clamp(chargeFraction, 0, 1)
+
+	local minPower = boost.defaultJumpPower
+	local maxPower = boost.defaultJumpPower * JUMP_BOOST_MULTIPLIER
+	humanoid.JumpPower = minPower + chargeFraction * (maxPower - minPower)
+	humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+
+	boost.remaining -= 1
+	if boost.remaining <= 0 then
+		endJumpBoost(player)
+	else
+		player:SetAttribute("JumpsRemaining", boost.remaining)
+		task.defer(function()
+			if jumpBoosts[player] == boost then
+				humanoid.JumpPower = 0
+			end
+		end)
+	end
 end
 
 local function createJumpSpring(position)
@@ -216,6 +242,14 @@ shootEvent.OnServerEvent:Connect(function(player, origin, direction)
 	end
 
 	shootPlatform(player, origin, direction)
+end)
+
+chargeJumpEvent.OnServerEvent:Connect(function(player, chargeFraction)
+	if typeof(chargeFraction) ~= "number" then
+		return
+	end
+
+	performChargeJump(player, chargeFraction)
 end)
 
 Players.PlayerAdded:Connect(function(player)
