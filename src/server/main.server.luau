@@ -20,7 +20,7 @@ local JUMP_BOOST_COUNT = 10
 
 local platformQueues = {} -- [player] = { platform, platform, ... } oldest first
 local lastShotTime = {} -- [player] = os.clock() of last shot
-local jumpBoosts = {} -- [player] = { remaining, defaultJumpPower, defaultUseJumpPower }
+local jumpBoosts = {} -- [player] = { remaining, baseVelocity }
 
 local function createSpawnArea()
 	local floor = Instance.new("Part")
@@ -51,32 +51,25 @@ local function endJumpBoost(player)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if humanoid then
-		humanoid.JumpPower = boost.defaultJumpPower
-		humanoid.UseJumpPower = boost.defaultUseJumpPower
+		humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
 	end
 
 	jumpBoosts[player] = nil
 	player:SetAttribute("JumpsRemaining", nil)
 end
 
--- Grants JUMP_BOOST_COUNT charge-jumps. While active, normal auto-jump is
--- suppressed (JumpPower held at 0) so the only way to jump is via
--- chargeJumpEvent, which sets a one-shot JumpPower based on hold duration.
+-- Grants JUMP_BOOST_COUNT charge-jumps. The built-in Jumping state is
+-- disabled entirely so Roblox's default controller can't fire its own weak
+-- jump on Space; chargeJumpEvent instead launches the character directly via
+-- an upward velocity impulse, sidestepping JumpPower/JumpHeight entirely.
 local function applyJumpBoost(player, humanoid)
 	endJumpBoost(player)
 
-	-- Force the legacy JumpPower system on, since UseJumpPower may be false
-	-- (JumpHeight-based) by default, in which case JumpPower has no effect.
-	local defaultUseJumpPower = humanoid.UseJumpPower
-	humanoid.UseJumpPower = true
-
-	local defaultJumpPower = humanoid.JumpPower
-	humanoid.JumpPower = 0
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
 
 	local boost = {
 		remaining = JUMP_BOOST_COUNT,
-		defaultJumpPower = defaultJumpPower,
-		defaultUseJumpPower = defaultUseJumpPower,
+		baseVelocity = humanoid.JumpPower > 0 and humanoid.JumpPower or 50,
 	}
 	jumpBoosts[player] = boost
 	player:SetAttribute("JumpsRemaining", boost.remaining)
@@ -89,28 +82,25 @@ local function performChargeJump(player, chargeFraction)
 	end
 
 	local character = player.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	if not humanoid then
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+	if not rootPart then
 		return
 	end
 
 	chargeFraction = math.clamp(chargeFraction, 0, 1)
 
-	local minPower = boost.defaultJumpPower
-	local maxPower = boost.defaultJumpPower * JUMP_BOOST_MULTIPLIER
-	humanoid.JumpPower = minPower + chargeFraction * (maxPower - minPower)
-	humanoid.Jump = true
+	local minVelocity = boost.baseVelocity
+	local maxVelocity = boost.baseVelocity * JUMP_BOOST_MULTIPLIER
+	local jumpVelocity = minVelocity + chargeFraction * (maxVelocity - minVelocity)
+
+	local currentVelocity = rootPart.AssemblyLinearVelocity
+	rootPart.AssemblyLinearVelocity = Vector3.new(currentVelocity.X, jumpVelocity, currentVelocity.Z)
 
 	boost.remaining -= 1
 	if boost.remaining <= 0 then
 		endJumpBoost(player)
 	else
 		player:SetAttribute("JumpsRemaining", boost.remaining)
-		task.defer(function()
-			if jumpBoosts[player] == boost then
-				humanoid.JumpPower = 0
-			end
-		end)
 	end
 end
 
