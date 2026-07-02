@@ -1,6 +1,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
+local Lighting = game:GetService("Lighting")
 
 local shootEvent = Instance.new("RemoteEvent")
 shootEvent.Name = "ShootPlatform"
@@ -22,13 +23,50 @@ local platformQueues = {} -- [player] = { platform, platform, ... } oldest first
 local lastShotTime = {} -- [player] = os.clock() of last shot
 local jumpBoosts = {} -- [player] = { remaining }
 
+local function setupJungleAtmosphere()
+	Lighting.Ambient = Color3.fromRGB(55, 75, 45)
+	Lighting.OutdoorAmbient = Color3.fromRGB(85, 105, 65)
+	Lighting.Brightness = 2.2
+	Lighting.ClockTime = 12.5
+	Lighting.FogColor = Color3.fromRGB(140, 170, 120)
+	Lighting.FogEnd = 900
+
+	local atmosphere = Instance.new("Atmosphere")
+	atmosphere.Density = 0.35
+	atmosphere.Haze = 1.6
+	atmosphere.Color = Color3.fromRGB(150, 180, 130)
+	atmosphere.Decay = Color3.fromRGB(70, 90, 60)
+	atmosphere.Glare = 0.15
+	atmosphere.Parent = Lighting
+end
+
+local function createGroundDecoration()
+	for _ = 1, 14 do
+		local isRock = math.random() > 0.5
+		local decoration = Instance.new("Part")
+		decoration.Shape = Enum.PartType.Ball
+		decoration.Name = isRock and "Rock" or "Bush"
+		local size = isRock and (1 + math.random() * 1.5) or (1.5 + math.random() * 1.5)
+		decoration.Size = Vector3.new(size, size, size)
+
+		local x = (math.random() - 0.5) * 34
+		local z = (math.random() - 0.5) * 30 + 25
+		decoration.CFrame = CFrame.new(x, size / 2, z)
+		decoration.Anchored = true
+		decoration.CanCollide = false
+		decoration.Material = isRock and Enum.Material.Rock or Enum.Material.Grass
+		decoration.Color = isRock and Color3.fromRGB(120, 120, 115) or Color3.fromRGB(40, 120, 45)
+		decoration.Parent = Workspace
+	end
+end
+
 local function createSpawnArea()
 	local floor = Instance.new("Part")
 	floor.Name = "Floor"
 	floor.Size = Vector3.new(40, 1, 40)
 	floor.Anchored = true
 	floor.Material = Enum.Material.Grass
-	floor.Color = Color3.fromRGB(90, 160, 90)
+	floor.Color = Color3.fromRGB(55, 120, 55)
 	floor.CFrame = CFrame.new(0, 0, 20)
 	floor.Parent = Workspace
 
@@ -36,10 +74,12 @@ local function createSpawnArea()
 	spawnLocation.Name = "Spawn"
 	spawnLocation.Size = Vector3.new(6, 1, 6)
 	spawnLocation.Anchored = true
-	spawnLocation.Material = Enum.Material.SmoothPlastic
-	spawnLocation.Color = Color3.fromRGB(220, 220, 220)
+	spawnLocation.Material = Enum.Material.WoodPlanks
+	spawnLocation.Color = Color3.fromRGB(150, 110, 70)
 	spawnLocation.CFrame = CFrame.new(0, 1, 30) * CFrame.Angles(0, math.pi, 0)
 	spawnLocation.Parent = Workspace
+
+	createGroundDecoration()
 end
 
 local function endJumpBoost(player)
@@ -113,31 +153,69 @@ local function createJumpSpring(position)
 	return pad
 end
 
-local function createClimbShaft()
-	local wallSize = Vector3.new(2, SHAFT_HEIGHT, 40)
+local TRUNK_CANOPY_COLORS = {
+	Color3.fromRGB(34, 110, 40),
+	Color3.fromRGB(45, 130, 50),
+	Color3.fromRGB(28, 95, 35),
+}
 
-	local leftWall = Instance.new("Part")
-	leftWall.Name = "ShaftWallLeft"
-	leftWall.Size = wallSize
-	leftWall.Anchored = true
-	leftWall.Material = Enum.Material.Concrete
-	leftWall.Color = Color3.fromRGB(120, 120, 130)
-	leftWall.CFrame = CFrame.new(-7, wallSize.Y / 2, 0)
-	leftWall.Parent = Workspace
+-- A climbable trunk (the actual shootable surface) plus a decorative,
+-- non-collidable leafy canopy cluster near the top.
+local function createTree(position, trunkHeight, trunkRadius)
+	local trunk = Instance.new("Part")
+	trunk.Name = "TreeTrunk"
+	trunk.Shape = Enum.PartType.Cylinder
+	trunk.Size = Vector3.new(trunkHeight, trunkRadius * 2, trunkRadius * 2)
+	trunk.CFrame = CFrame.new(position + Vector3.new(0, trunkHeight / 2, 0)) * CFrame.Angles(0, 0, math.rad(90))
+	trunk.Anchored = true
+	trunk.Material = Enum.Material.Wood
+	trunk.Color = Color3.fromRGB(92, 64, 42)
+	trunk.Parent = Workspace
 
-	local rightWall = leftWall:Clone()
-	rightWall.Name = "ShaftWallRight"
-	rightWall.CFrame = CFrame.new(7, wallSize.Y / 2, 0)
-	rightWall.Parent = Workspace
+	for _ = 1, 4 do
+		local blob = Instance.new("Part")
+		blob.Name = "TreeCanopy"
+		blob.Shape = Enum.PartType.Ball
+		local blobSize = trunkRadius * (5 + math.random() * 2)
+		blob.Size = Vector3.new(blobSize, blobSize, blobSize)
 
-	local backWall = Instance.new("Part")
-	backWall.Name = "ShaftWallBack"
-	backWall.Size = Vector3.new(16, SHAFT_HEIGHT, 2)
-	backWall.Anchored = true
-	backWall.Material = Enum.Material.Concrete
-	backWall.Color = Color3.fromRGB(100, 100, 110)
-	backWall.CFrame = CFrame.new(0, SHAFT_HEIGHT / 2, -20)
-	backWall.Parent = Workspace
+		local offset = Vector3.new(
+			(math.random() - 0.5) * trunkRadius * 4,
+			trunkHeight - blobSize * 0.3,
+			(math.random() - 0.5) * trunkRadius * 4
+		)
+		blob.CFrame = CFrame.new(position + offset)
+		blob.Anchored = true
+		blob.CanCollide = false
+		blob.Material = Enum.Material.Grass
+		blob.Color = TRUNK_CANOPY_COLORS[math.random(1, #TRUNK_CANOPY_COLORS)]
+		blob.Parent = Workspace
+	end
+
+	return trunk
+end
+
+local function createJungleClimbArea()
+	local treeHeight = SHAFT_HEIGHT
+	local treeRadius = 2.5
+	local treeSpacingZ = 10
+	local numTreesPerSide = 5
+	local sideX = 8
+
+	for i = 1, numTreesPerSide do
+		local z = (i - 1) * treeSpacingZ - ((numTreesPerSide - 1) * treeSpacingZ) / 2
+		createTree(Vector3.new(-sideX, 0, z), treeHeight, treeRadius)
+		createTree(Vector3.new(sideX, 0, z), treeHeight, treeRadius)
+	end
+
+	local cliff = Instance.new("Part")
+	cliff.Name = "JungleCliff"
+	cliff.Size = Vector3.new(16, SHAFT_HEIGHT, 2)
+	cliff.Anchored = true
+	cliff.Material = Enum.Material.Rock
+	cliff.Color = Color3.fromRGB(90, 100, 70)
+	cliff.CFrame = CFrame.new(0, SHAFT_HEIGHT / 2, -25)
+	cliff.Parent = Workspace
 
 	local goal = Instance.new("Part")
 	goal.Name = "Goal"
@@ -149,8 +227,9 @@ local function createClimbShaft()
 	goal.Parent = Workspace
 end
 
+setupJungleAtmosphere()
 createSpawnArea()
-createClimbShaft()
+createJungleClimbArea()
 createJumpSpring(Vector3.new(0, 1, 18))
 
 local function removeOldestPlatform(player)
