@@ -45,6 +45,14 @@ rokit.toml             -> pinned toolchain versions
 
 Once you're happy with changes in Studio, publish normally via **File > Publish to Roblox...** (or Ctrl+Alt+P) — this pushes the synced place to the experience you created in step 1.
 
+## Gameplay
+
+A platform-gun obby: climb a tall shaft by shooting your own footholds onto its walls.
+
+- **Left click** — shoots a platform onto whatever surface is under your cursor (wall, floor, ceiling — any direction), up to 300 studs away.
+- Each player can have at most **8 active platforms** at once; shooting a 9th removes their oldest one, so you can't just build a permanent staircase — you have to keep climbing.
+- Reach the glowing green **Goal** platform at the top of the shaft to win.
+
 ## Optional: CI publishing via Open Cloud
 
 For automated builds/publishing without Studio:

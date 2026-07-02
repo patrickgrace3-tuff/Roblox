@@ -1,110 +1,149 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ProximityPromptService = game:GetService("ProximityPromptService")
 local Workspace = game:GetService("Workspace")
 
-local dropEvent = Instance.new("RemoteEvent")
-dropEvent.Name = "DropItem"
-dropEvent.Parent = ReplicatedStorage
+local shootEvent = Instance.new("RemoteEvent")
+shootEvent.Name = "ShootPlatform"
+shootEvent.Parent = ReplicatedStorage
 
-local heldItems = {} -- [player] = { part = Part, weld = WeldConstraint, prompt = ProximityPrompt }
+local MAX_PLATFORMS_PER_PLAYER = 8
+local PLATFORM_SIZE = Vector3.new(6, 1, 6)
+local MAX_SHOOT_DISTANCE = 300
+local SHOOT_COOLDOWN = 0.15
+local SHAFT_HEIGHT = 200
 
-local function createGrabbablePart(name, position, color)
-	local part = Instance.new("Part")
-	part.Name = name
-	part.Size = Vector3.new(2, 2, 2)
-	part.Position = position
-	part.Color = color
-	part.Anchored = true
-	part.Parent = Workspace
+local platformQueues = {} -- [player] = { platform, platform, ... } oldest first
+local lastShotTime = {} -- [player] = os.clock() of last shot
 
-	part:SetAttribute("Grabbable", true)
+local function createSpawnArea()
+	local floor = Instance.new("Part")
+	floor.Name = "Floor"
+	floor.Size = Vector3.new(40, 1, 40)
+	floor.Anchored = true
+	floor.Material = Enum.Material.Grass
+	floor.Color = Color3.fromRGB(90, 160, 90)
+	floor.CFrame = CFrame.new(0, 0, 20)
+	floor.Parent = Workspace
 
-	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "Grab"
-	prompt.ObjectText = name
-	prompt.HoldDuration = 0.25
-	prompt.MaxActivationDistance = 8
-	prompt.Parent = part
-
-	return part
+	local spawnLocation = Instance.new("SpawnLocation")
+	spawnLocation.Name = "Spawn"
+	spawnLocation.Size = Vector3.new(6, 1, 6)
+	spawnLocation.Anchored = true
+	spawnLocation.Material = Enum.Material.SmoothPlastic
+	spawnLocation.Color = Color3.fromRGB(220, 220, 220)
+	spawnLocation.CFrame = CFrame.new(0, 1, 30) * CFrame.Angles(0, math.pi, 0)
+	spawnLocation.Parent = Workspace
 end
 
-createGrabbablePart("Crate", Vector3.new(10, 3, 0), Color3.fromRGB(150, 100, 60))
-createGrabbablePart("Crate", Vector3.new(15, 3, 5), Color3.fromRGB(150, 100, 60))
-createGrabbablePart("Ball", Vector3.new(-10, 3, 0), Color3.fromRGB(200, 50, 50))
+local function createClimbShaft()
+	local wallSize = Vector3.new(2, SHAFT_HEIGHT, 40)
 
-local THROW_SPEED = 40
+	local leftWall = Instance.new("Part")
+	leftWall.Name = "ShaftWallLeft"
+	leftWall.Size = wallSize
+	leftWall.Anchored = true
+	leftWall.Material = Enum.Material.Concrete
+	leftWall.Color = Color3.fromRGB(120, 120, 130)
+	leftWall.CFrame = CFrame.new(-7, wallSize.Y / 2, 0)
+	leftWall.Parent = Workspace
 
-local function dropItem(player)
-	local held = heldItems[player]
-	if not held then
+	local rightWall = leftWall:Clone()
+	rightWall.Name = "ShaftWallRight"
+	rightWall.CFrame = CFrame.new(7, wallSize.Y / 2, 0)
+	rightWall.Parent = Workspace
+
+	local backWall = Instance.new("Part")
+	backWall.Name = "ShaftWallBack"
+	backWall.Size = Vector3.new(16, SHAFT_HEIGHT, 2)
+	backWall.Anchored = true
+	backWall.Material = Enum.Material.Concrete
+	backWall.Color = Color3.fromRGB(100, 100, 110)
+	backWall.CFrame = CFrame.new(0, SHAFT_HEIGHT / 2, -20)
+	backWall.Parent = Workspace
+
+	local goal = Instance.new("Part")
+	goal.Name = "Goal"
+	goal.Size = Vector3.new(12, 1, 16)
+	goal.Anchored = true
+	goal.Material = Enum.Material.Neon
+	goal.Color = Color3.fromRGB(0, 255, 120)
+	goal.CFrame = CFrame.new(0, SHAFT_HEIGHT + 1, 0)
+	goal.Parent = Workspace
+end
+
+createSpawnArea()
+createClimbShaft()
+
+local function removeOldestPlatform(player)
+	local queue = platformQueues[player]
+	if not queue or #queue == 0 then
 		return
 	end
 
-	if held.weld then
-		held.weld:Destroy()
+	local oldest = table.remove(queue, 1)
+	if oldest then
+		oldest:Destroy()
 	end
-	if held.part then
-		held.part.CanCollide = true
-
-		local character = player.Character
-		local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-		if rootPart then
-			held.part.AssemblyLinearVelocity = rootPart.CFrame.LookVector * THROW_SPEED
-		end
-	end
-	if held.prompt then
-		held.prompt.Enabled = true
-	end
-
-	heldItems[player] = nil
 end
 
-local function grabItem(player, part, prompt)
-	if heldItems[player] then
+local function shootPlatform(player, origin, direction)
+	local now = os.clock()
+	if lastShotTime[player] and now - lastShotTime[player] < SHOOT_COOLDOWN then
 		return
 	end
+	lastShotTime[player] = now
 
 	local character = player.Character
-	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-	if not rootPart then
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = character and { character } or {}
+
+	local result = Workspace:Raycast(origin, direction.Unit * MAX_SHOOT_DISTANCE, params)
+	if not result then
 		return
 	end
 
-	part.Anchored = false
-	part.CanCollide = false
-	part.CFrame = rootPart.CFrame * CFrame.new(0, 0, -4)
+	local platformPosition = result.Position + result.Normal * (PLATFORM_SIZE.Y / 2 + 0.2)
 
-	local weld = Instance.new("WeldConstraint")
-	weld.Part0 = rootPart
-	weld.Part1 = part
-	weld.Parent = part
+	local platform = Instance.new("Part")
+	platform.Name = "GunPlatform"
+	platform.Size = PLATFORM_SIZE
+	platform.Anchored = true
+	platform.CanCollide = true
+	platform.Material = Enum.Material.Neon
+	platform.Color = Color3.fromRGB(0, 200, 255)
+	platform.CFrame = CFrame.new(platformPosition)
+	platform.Parent = Workspace
 
-	prompt.Enabled = false
+	local queue = platformQueues[player]
+	if not queue then
+		queue = {}
+		platformQueues[player] = queue
+	end
 
-	heldItems[player] = { part = part, weld = weld, prompt = prompt }
+	table.insert(queue, platform)
+
+	if #queue > MAX_PLATFORMS_PER_PLAYER then
+		removeOldestPlatform(player)
+	end
 end
 
-ProximityPromptService.PromptTriggered:Connect(function(prompt, player)
-	local part = prompt.Parent
-	if not part or not part:GetAttribute("Grabbable") then
+shootEvent.OnServerEvent:Connect(function(player, origin, direction)
+	if typeof(origin) ~= "Vector3" or typeof(direction) ~= "Vector3" then
 		return
 	end
 
-	grabItem(player, part, prompt)
-end)
-
-dropEvent.OnServerEvent:Connect(function(player)
-	dropItem(player)
-end)
-
-Players.PlayerAdded:Connect(function(player)
-	player.CharacterRemoving:Connect(function()
-		dropItem(player)
-	end)
+	shootPlatform(player, origin, direction)
 end)
 
 Players.PlayerRemoving:Connect(function(player)
-	dropItem(player)
+	local queue = platformQueues[player]
+	if queue then
+		for _, platform in queue do
+			platform:Destroy()
+		end
+	end
+
+	platformQueues[player] = nil
+	lastShotTime[player] = nil
 end)
