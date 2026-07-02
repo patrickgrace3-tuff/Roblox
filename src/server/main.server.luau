@@ -11,6 +11,10 @@ local chargeJumpEvent = Instance.new("RemoteEvent")
 chargeJumpEvent.Name = "ChargeJump"
 chargeJumpEvent.Parent = ReplicatedStorage
 
+local toggleFlightEvent = Instance.new("RemoteEvent")
+toggleFlightEvent.Name = "ToggleFlight"
+toggleFlightEvent.Parent = ReplicatedStorage
+
 local MAX_PLATFORMS_PER_PLAYER = 8
 local PLATFORM_SIZE = Vector3.new(6, 1, 6)
 local MAX_SHOOT_DISTANCE = 300
@@ -19,10 +23,13 @@ local SHAFT_HEIGHT = 200
 local JUMP_BOOST_MULTIPLIER = 5
 local JUMP_BOOST_COUNT = 10
 local BEACH_CENTER_X = 90
+local DEFAULT_WALK_SPEED = 16
+local FLY_WALK_SPEED = 50
 
 local platformQueues = {} -- [player] = { platform, platform, ... } oldest first
 local lastShotTime = {} -- [player] = os.clock() of last shot
 local jumpBoosts = {} -- [player] = { remaining }
+local flyingPlayers = {} -- [player] = true while actively flying
 
 local function setupJungleAtmosphere()
 	Lighting.Ambient = Color3.fromRGB(55, 75, 45)
@@ -149,6 +156,102 @@ local function createJumpSpring(position)
 		end
 
 		applyJumpBoost(player, humanoid)
+	end)
+
+	return pad
+end
+
+local function attachCarpetVisual(character)
+	if character:FindFirstChild("MagicCarpetVisual") then
+		return
+	end
+
+	local rootPart = character:FindFirstChild("HumanoidRootPart")
+	if not rootPart then
+		return
+	end
+
+	local carpet = Instance.new("Part")
+	carpet.Name = "MagicCarpetVisual"
+	carpet.Size = Vector3.new(6, 0.4, 4)
+	carpet.Material = Enum.Material.Fabric
+	carpet.Color = Color3.fromRGB(120, 40, 160)
+	carpet.CanCollide = false
+	carpet.Massless = true
+	carpet.CFrame = rootPart.CFrame * CFrame.new(0, -3, 0)
+	carpet.Parent = character
+
+	local trim = Instance.new("Part")
+	trim.Name = "MagicCarpetTrim"
+	trim.Size = Vector3.new(6.2, 0.1, 4.2)
+	trim.Material = Enum.Material.Neon
+	trim.Color = Color3.fromRGB(255, 215, 0)
+	trim.CanCollide = false
+	trim.Massless = true
+	trim.CFrame = carpet.CFrame * CFrame.new(0, 0.25, 0)
+	trim.Parent = character
+
+	local carpetWeld = Instance.new("WeldConstraint")
+	carpetWeld.Part0 = rootPart
+	carpetWeld.Part1 = carpet
+	carpetWeld.Parent = carpet
+
+	local trimWeld = Instance.new("WeldConstraint")
+	trimWeld.Part0 = rootPart
+	trimWeld.Part1 = trim
+	trimWeld.Parent = trim
+end
+
+local function detachCarpetVisual(character)
+	local carpet = character:FindFirstChild("MagicCarpetVisual")
+	if carpet then
+		carpet:Destroy()
+	end
+
+	local trim = character:FindFirstChild("MagicCarpetTrim")
+	if trim then
+		trim:Destroy()
+	end
+end
+
+local function setFlying(player, flying)
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not character or not humanoid then
+		return
+	end
+
+	if flying then
+		flyingPlayers[player] = true
+		attachCarpetVisual(character)
+		humanoid.WalkSpeed = FLY_WALK_SPEED
+	else
+		flyingPlayers[player] = nil
+		detachCarpetVisual(character)
+		humanoid.WalkSpeed = DEFAULT_WALK_SPEED
+	end
+
+	player:SetAttribute("IsFlying", flying or nil)
+end
+
+local function createMagicCarpetPickup(position)
+	local pad = Instance.new("Part")
+	pad.Name = "MagicCarpetPickup"
+	pad.Size = Vector3.new(6, 0.4, 4)
+	pad.Anchored = true
+	pad.Material = Enum.Material.Fabric
+	pad.Color = Color3.fromRGB(120, 40, 160)
+	pad.CFrame = CFrame.new(position)
+	pad.Parent = Workspace
+
+	pad.Touched:Connect(function(hit)
+		local character = hit.Parent
+		local player = character and Players:GetPlayerFromCharacter(character)
+		if not player then
+			return
+		end
+
+		player:SetAttribute("HasCarpet", true)
 	end)
 
 	return pad
@@ -378,6 +481,7 @@ setupJungleAtmosphere()
 createSpawnArea()
 createJungleClimbArea()
 createJumpSpring(Vector3.new(0, 1, 18))
+createMagicCarpetPickup(Vector3.new(14, 1, 30))
 
 createBeachSpawnArea()
 createBeachClimbArea()
@@ -449,9 +553,18 @@ chargeJumpEvent.OnServerEvent:Connect(function(player)
 	performChargeJump(player)
 end)
 
+toggleFlightEvent.OnServerEvent:Connect(function(player)
+	if not player:GetAttribute("HasCarpet") then
+		return
+	end
+
+	setFlying(player, not flyingPlayers[player])
+end)
+
 Players.PlayerAdded:Connect(function(player)
 	player.CharacterRemoving:Connect(function()
 		endJumpBoost(player)
+		flyingPlayers[player] = nil
 	end)
 end)
 
@@ -465,5 +578,6 @@ Players.PlayerRemoving:Connect(function(player)
 
 	platformQueues[player] = nil
 	lastShotTime[player] = nil
+	flyingPlayers[player] = nil
 	endJumpBoost(player)
 end)
