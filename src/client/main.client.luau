@@ -276,6 +276,92 @@ local function flashBowSlot()
 	end)
 end
 
+-- WoW-style character/equipment panel, toggled with I.
+local EQUIPMENT_SLOTS = { "Head", "Shoulders", "Chest", "Legs" }
+local EPIC_TEXT_COLOR = Color3.fromRGB(163, 53, 238)
+local EMPTY_TEXT_COLOR = Color3.fromRGB(140, 140, 140)
+
+local inventoryPanel = Instance.new("Frame")
+inventoryPanel.Name = "InventoryPanel"
+inventoryPanel.AnchorPoint = Vector2.new(0.5, 0.5)
+inventoryPanel.Position = UDim2.new(0.5, 0, 0.5, 0)
+inventoryPanel.Size = UDim2.new(0, 300, 0, 260)
+inventoryPanel.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+inventoryPanel.BackgroundTransparency = 0.05
+inventoryPanel.BorderSizePixel = 0
+inventoryPanel.Visible = false
+inventoryPanel.Parent = screenGui
+
+local panelStroke = Instance.new("UIStroke")
+panelStroke.Thickness = 2
+panelStroke.Color = EPIC_TEXT_COLOR
+panelStroke.Parent = inventoryPanel
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Name = "Title"
+titleLabel.Size = UDim2.new(1, 0, 0, 36)
+titleLabel.BackgroundTransparency = 1
+titleLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextScaled = true
+titleLabel.Text = "Character (I to close)"
+titleLabel.Parent = inventoryPanel
+
+local slotValueLabels = {}
+
+for index, slotName in ipairs(EQUIPMENT_SLOTS) do
+	local row = Instance.new("Frame")
+	row.Name = slotName .. "Row"
+	row.Size = UDim2.new(1, -20, 0, 48)
+	row.Position = UDim2.new(0, 10, 0, 40 + (index - 1) * 54)
+	row.BackgroundColor3 = Color3.fromRGB(30, 30, 38)
+	row.BackgroundTransparency = 0.2
+	row.BorderSizePixel = 0
+	row.Parent = inventoryPanel
+
+	local slotLabel = Instance.new("TextLabel")
+	slotLabel.Size = UDim2.new(0.35, 0, 1, 0)
+	slotLabel.BackgroundTransparency = 1
+	slotLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+	slotLabel.Font = Enum.Font.GothamBold
+	slotLabel.TextScaled = true
+	slotLabel.Text = slotName
+	slotLabel.Parent = row
+
+	local valueLabel = Instance.new("TextLabel")
+	valueLabel.Name = "Value"
+	valueLabel.Size = UDim2.new(0.65, -8, 1, 0)
+	valueLabel.Position = UDim2.new(0.35, 8, 0, 0)
+	valueLabel.BackgroundTransparency = 1
+	valueLabel.TextColor3 = EMPTY_TEXT_COLOR
+	valueLabel.Font = Enum.Font.Gotham
+	valueLabel.TextScaled = true
+	valueLabel.TextXAlignment = Enum.TextXAlignment.Left
+	valueLabel.Text = "Empty"
+	valueLabel.Parent = row
+
+	slotValueLabels[slotName] = valueLabel
+end
+
+local function updateInventoryPanel()
+	for _, slotName in ipairs(EQUIPMENT_SLOTS) do
+		local equipped = player:GetAttribute("Equipped" .. slotName)
+		local label = slotValueLabels[slotName]
+		if equipped then
+			label.Text = equipped
+			label.TextColor3 = EPIC_TEXT_COLOR
+		else
+			label.Text = "Empty"
+			label.TextColor3 = EMPTY_TEXT_COLOR
+		end
+	end
+end
+
+for _, slotName in ipairs(EQUIPMENT_SLOTS) do
+	player:GetAttributeChangedSignal("Equipped" .. slotName):Connect(updateInventoryPanel)
+end
+updateInventoryPanel()
+
 local function shoot()
 	local camera = Workspace.CurrentCamera
 	if not camera then
@@ -373,6 +459,8 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		activateShieldEvent:FireServer()
 	elseif input.KeyCode == Enum.KeyCode.Three then
 		shootArrow()
+	elseif input.KeyCode == Enum.KeyCode.I then
+		inventoryPanel.Visible = not inventoryPanel.Visible
 	end
 end)
 

@@ -60,6 +60,21 @@ local SHIELD_DURATION = 3
 local BOW_DAMAGE = 12
 local BOW_RANGE = 200
 
+local BASE_MAX_HEALTH = 100
+local BOSS_RESPAWN_DELAY = 20
+local EPIC_COLOR = Color3.fromRGB(163, 53, 238)
+
+-- statType: "health" adds to MaxHealth, "damage" adds to sword/bow damage,
+-- "speed" adds to WalkSpeed. baseValue is doubled for the (currently only)
+-- Epic rarity dropped by the boss.
+local EQUIPMENT_SLOTS = { "Head", "Shoulders", "Chest", "Legs" }
+local ITEM_TEMPLATES = {
+	Head = { itemName = "Helm", statType = "health", baseValue = 15 },
+	Shoulders = { itemName = "Shoulderguards", statType = "damage", baseValue = 5 },
+	Chest = { itemName = "Chestplate", statType = "health", baseValue = 25 },
+	Legs = { itemName = "Legguards", statType = "speed", baseValue = 4 },
+}
+
 local platformQueues = {} -- [player] = { platform, platform, ... } oldest first
 local lastShotTime = {} -- [player] = os.clock() of last shot
 local jumpBoosts = {} -- [player] = { remaining }
@@ -67,6 +82,10 @@ local flyingPlayers = {} -- [player] = true while actively flying
 local mobs = {} -- [mobModel] = { health, maxHealth, damage, speed, attackRange, detectRange, attackCooldown, lastAttackTime, isBoss }
 local autoSwingPlayers = {} -- [player] = os.clock() of last auto-swing
 local shieldExpiry = {} -- [player] = os.clock() the shield buff ends
+local playerEquipment = {} -- [player] = { [slot] = itemData or nil }
+local playerStats = {} -- [player] = { bonusHealth, bonusDamage, bonusSpeed }
+local bossSpawnPosition = nil
+local createMob -- forward declared: damageMob (defined earlier) respawns the boss via this
 
 local function setupJungleAtmosphere()
 	Lighting.Ambient = Color3.fromRGB(55, 75, 45)
@@ -265,7 +284,8 @@ local function setFlying(player, flying)
 	else
 		flyingPlayers[player] = nil
 		detachCarpetVisual(character)
-		humanoid.WalkSpeed = DEFAULT_WALK_SPEED
+		local stats = playerStats[player]
+		humanoid.WalkSpeed = DEFAULT_WALK_SPEED + (stats and stats.bonusSpeed or 0)
 	end
 
 	player:SetAttribute("IsFlying", flying or nil)
@@ -339,6 +359,183 @@ local function createVictoryPedestal(position)
 	pedestal.Parent = Workspace
 end
 
+local function recalculateStats(player)
+	local equipment = playerEquipment[player]
+	if not equipment then
+		return
+	end
+
+	local bonusHealth, bonusDamage, bonusSpeed = 0, 0, 0
+	for _, item in pairs(equipment) do
+		if item then
+			if item.statType == "health" then
+				bonusHealth += item.value
+			elseif item.statType == "damage" then
+				bonusDamage += item.value
+			elseif item.statType == "speed" then
+				bonusSpeed += item.value
+			end
+		end
+	end
+
+	playerStats[player] = { bonusHealth = bonusHealth, bonusDamage = bonusDamage, bonusSpeed = bonusSpeed }
+
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		return
+	end
+
+	local newMaxHealth = BASE_MAX_HEALTH + bonusHealth
+	local delta = newMaxHealth - humanoid.MaxHealth
+	humanoid.MaxHealth = newMaxHealth
+	humanoid.Health = math.clamp(humanoid.Health + delta, 0, newMaxHealth)
+
+	if not flyingPlayers[player] then
+		humanoid.WalkSpeed = DEFAULT_WALK_SPEED + bonusSpeed
+	end
+end
+
+local function getBonusDamage(player)
+	local stats = playerStats[player]
+	return stats and stats.bonusDamage or 0
+end
+
+local function getSlotAttachPart(character, slot)
+	if slot == "Head" then
+		return character:FindFirstChild("Head")
+	elseif slot == "Shoulders" or slot == "Chest" then
+		return character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso")
+	elseif slot == "Legs" then
+		return character:FindFirstChild("LowerTorso") or character:FindFirstChild("Torso")
+	end
+	return nil
+end
+
+local function updateGearVisual(character, slot, item)
+	local existingVisual = character:FindFirstChild("Gear" .. slot)
+	if existingVisual then
+		existingVisual:Destroy()
+	end
+
+	if not item then
+		return
+	end
+
+	local attachPart = getSlotAttachPart(character, slot)
+	if not attachPart then
+		return
+	end
+
+	local visual = Instance.new("Part")
+	visual.Name = "Gear" .. slot
+	visual.CanCollide = false
+	visual.Massless = true
+	visual.Material = Enum.Material.Metal
+	visual.Color = item.color
+
+	if slot == "Head" then
+		visual.Size = Vector3.new(1.6, 0.6, 1.6)
+		visual.CFrame = attachPart.CFrame * CFrame.new(0, 0.6, 0)
+	elseif slot == "Shoulders" then
+		visual.Size = Vector3.new(2.6, 0.6, 1.4)
+		visual.CFrame = attachPart.CFrame * CFrame.new(0, 0.9, 0)
+	elseif slot == "Chest" then
+		visual.Size = Vector3.new(2.2, 1.2, 1.2)
+		visual.CFrame = attachPart.CFrame
+	elseif slot == "Legs" then
+		visual.Size = Vector3.new(1.8, 1.4, 1.2)
+		visual.CFrame = attachPart.CFrame
+	end
+
+	visual.Parent = character
+
+	local weld = Instance.new("WeldConstraint")
+	weld.Part0 = attachPart
+	weld.Part1 = visual
+	weld.Parent = visual
+end
+
+local function reapplyGearVisuals(player, character)
+	local equipment = playerEquipment[player]
+	if not equipment then
+		return
+	end
+
+	for _, slot in ipairs(EQUIPMENT_SLOTS) do
+		updateGearVisual(character, slot, equipment[slot])
+	end
+end
+
+local function equipItem(player, slot, item)
+	local equipment = playerEquipment[player]
+	if not equipment then
+		equipment = {}
+		playerEquipment[player] = equipment
+	end
+
+	equipment[slot] = item
+	player:SetAttribute("Equipped" .. slot, item.displayName)
+
+	local character = player.Character
+	if character then
+		updateGearVisual(character, slot, item)
+	end
+
+	recalculateStats(player)
+end
+
+local function generateEpicItem(slot)
+	local template = ITEM_TEMPLATES[slot]
+	return {
+		statType = template.statType,
+		value = template.baseValue * 2,
+		color = EPIC_COLOR,
+		displayName = "Epic " .. template.itemName,
+	}
+end
+
+local function createLootDrop(position, slot, item)
+	local loot = Instance.new("Part")
+	loot.Name = "LootDrop"
+	loot.Size = Vector3.new(2, 2, 2)
+	loot.Anchored = true
+	loot.CanCollide = false
+	loot.Material = Enum.Material.Neon
+	loot.Color = item.color
+	loot.CFrame = CFrame.new(position.X, 2, position.Z)
+	loot.Parent = Workspace
+
+	local billboard = Instance.new("BillboardGui")
+	billboard.Size = UDim2.new(0, 220, 0, 30)
+	billboard.StudsOffset = Vector3.new(0, 2, 0)
+	billboard.AlwaysOnTop = true
+	billboard.Adornee = loot
+	billboard.Parent = loot
+
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, 0, 1, 0)
+	label.BackgroundTransparency = 1
+	label.TextColor3 = item.color
+	label.Font = Enum.Font.GothamBold
+	label.TextScaled = true
+	label.Text = item.displayName
+	label.Parent = billboard
+
+	local connection
+	connection = loot.Touched:Connect(function(hit)
+		local character = hit.Parent
+		local player = character and Players:GetPlayerFromCharacter(character)
+		if not player then
+			return
+		end
+
+		connection:Disconnect()
+		loot:Destroy()
+		equipItem(player, slot, item)
+	end)
+end
+
 local function damageMob(model, amount)
 	local data = mobs[model]
 	if not data then
@@ -355,6 +552,17 @@ local function damageMob(model, amount)
 
 		if isBoss then
 			createVictoryPedestal(position)
+
+			local slot = EQUIPMENT_SLOTS[math.random(1, #EQUIPMENT_SLOTS)]
+			local item = generateEpicItem(slot)
+			local lootPosition = position + Vector3.new(math.random(-4, 4), 0, math.random(-4, 4))
+			createLootDrop(lootPosition, slot, item)
+
+			if bossSpawnPosition then
+				task.delay(BOSS_RESPAWN_DELAY, function()
+					createMob(bossSpawnPosition, true)
+				end)
+			end
 		end
 	elseif data.healthBarFill then
 		data.healthBarFill.Size = UDim2.new(data.health / data.maxHealth, 0, 1, 0)
@@ -363,7 +571,7 @@ end
 
 -- Mobs are Anchored so they're simple to move via CFrame each tick (no
 -- physics/collision fighting), and never fall or get stuck.
-local function createMob(position, isBoss)
+function createMob(position, isBoss)
 	local model = Instance.new("Model")
 	model.Name = isBoss and "AngryChefBoss" or "Mob"
 
@@ -593,6 +801,7 @@ local function performSwordSwing(player)
 	end
 
 	local facing = rootPart.CFrame.LookVector
+	local totalDamage = SWORD_DAMAGE + getBonusDamage(player)
 
 	for model, _ in pairs(mobs) do
 		if not model.PrimaryPart then
@@ -604,7 +813,7 @@ local function performSwordSwing(player)
 		if distance <= SWORD_RANGE and distance > 0 then
 			local direction = toMob.Unit
 			if direction:Dot(facing) > 0.2 then
-				damageMob(model, SWORD_DAMAGE)
+				damageMob(model, totalDamage)
 			end
 		end
 	end
@@ -704,7 +913,7 @@ local function performBowShot(player, origin, direction)
 
 		local hitModel = result.Instance:FindFirstAncestorOfClass("Model")
 		if hitModel and mobs[hitModel] then
-			damageMob(hitModel, BOW_DAMAGE)
+			damageMob(hitModel, BOW_DAMAGE + getBonusDamage(player))
 		end
 	end
 
@@ -840,7 +1049,8 @@ local function createDungeonLevel()
 		createMob(Vector3.new(DUNGEON_CENTER_X + xOffset, 0, z), false)
 	end
 
-	createMob(Vector3.new(DUNGEON_CENTER_X, 0, corridorLength + bossRoomLength / 2), true)
+	bossSpawnPosition = Vector3.new(DUNGEON_CENTER_X, 0, corridorLength + bossRoomLength / 2)
+	createMob(bossSpawnPosition, true)
 end
 
 local TRUNK_CANOPY_COLORS = {
@@ -1170,6 +1380,8 @@ Players.PlayerAdded:Connect(function(player)
 
 	player.CharacterAdded:Connect(function(character)
 		equipWeapons(character)
+		reapplyGearVisuals(player, character)
+		recalculateStats(player)
 	end)
 
 	player.CharacterRemoving:Connect(function()
@@ -1191,6 +1403,8 @@ Players.PlayerRemoving:Connect(function(player)
 	lastShotTime[player] = nil
 	flyingPlayers[player] = nil
 	shieldExpiry[player] = nil
+	playerEquipment[player] = nil
+	playerStats[player] = nil
 	endJumpBoost(player)
 	stopAutoSwing(player)
 end)
