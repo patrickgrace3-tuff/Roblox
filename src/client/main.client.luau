@@ -322,8 +322,10 @@ closeButton.Parent = inventoryPanel
 local slotValueLabels = {}
 
 for index, slotName in ipairs(EQUIPMENT_SLOTS) do
-	local row = Instance.new("Frame")
+	local row = Instance.new("TextButton")
 	row.Name = slotName .. "Row"
+	row.Text = ""
+	row.AutoButtonColor = false
 	row.Size = UDim2.new(1, -20, 0, 48)
 	row.Position = UDim2.new(0, 10, 0, 40 + (index - 1) * 54)
 	row.BackgroundColor3 = Color3.fromRGB(30, 30, 38)
@@ -354,49 +356,69 @@ for index, slotName in ipairs(EQUIPMENT_SLOTS) do
 
 	slotValueLabels[slotName] = valueLabel
 
-	-- Hover tooltip showing the actual stat bonus, popping out to the
-	-- right of the panel so it doesn't overlap the row it belongs to.
-	local tooltip = Instance.new("Frame")
-	tooltip.Name = "Tooltip"
-	tooltip.AnchorPoint = Vector2.new(0, 0.5)
-	tooltip.Position = UDim2.new(1, 8, 0.5, 0)
-	tooltip.Size = UDim2.new(0, 170, 0, 32)
-	tooltip.BackgroundColor3 = Color3.fromRGB(10, 10, 14)
-	tooltip.BackgroundTransparency = 0.05
-	tooltip.BorderSizePixel = 0
-	tooltip.Visible = false
-	tooltip.ZIndex = 5
-	tooltip.Parent = row
+	-- Click-to-open stat popup, popping out to the right of the panel so it
+	-- doesn't overlap the row it belongs to. (Hover wasn't firing reliably,
+	-- same as the earlier I-key issue, so this uses a click like the
+	-- Character button does.)
+	local statPopup = Instance.new("Frame")
+	statPopup.Name = "StatPopup"
+	statPopup.AnchorPoint = Vector2.new(0, 0.5)
+	statPopup.Position = UDim2.new(1, 8, 0.5, 0)
+	statPopup.Size = UDim2.new(0, 190, 0, 32)
+	statPopup.BackgroundColor3 = Color3.fromRGB(10, 10, 14)
+	statPopup.BackgroundTransparency = 0.05
+	statPopup.BorderSizePixel = 0
+	statPopup.Visible = false
+	statPopup.ZIndex = 5
+	statPopup.Parent = row
 
-	local tooltipStroke = Instance.new("UIStroke")
-	tooltipStroke.Thickness = 1
-	tooltipStroke.Color = EPIC_TEXT_COLOR
-	tooltipStroke.Parent = tooltip
+	local statPopupStroke = Instance.new("UIStroke")
+	statPopupStroke.Thickness = 1
+	statPopupStroke.Color = EPIC_TEXT_COLOR
+	statPopupStroke.Parent = statPopup
 
-	local tooltipLabel = Instance.new("TextLabel")
-	tooltipLabel.Size = UDim2.new(1, -8, 1, 0)
-	tooltipLabel.Position = UDim2.new(0, 4, 0, 0)
-	tooltipLabel.BackgroundTransparency = 1
-	tooltipLabel.TextColor3 = Color3.fromRGB(120, 220, 120)
-	tooltipLabel.Font = Enum.Font.Gotham
-	tooltipLabel.TextScaled = true
-	tooltipLabel.TextWrapped = true
-	tooltipLabel.Text = ""
-	tooltipLabel.ZIndex = 5
-	tooltipLabel.Parent = tooltip
+	local statPopupLabel = Instance.new("TextLabel")
+	statPopupLabel.Size = UDim2.new(1, -28, 1, 0)
+	statPopupLabel.Position = UDim2.new(0, 4, 0, 0)
+	statPopupLabel.BackgroundTransparency = 1
+	statPopupLabel.TextColor3 = Color3.fromRGB(120, 220, 120)
+	statPopupLabel.Font = Enum.Font.Gotham
+	statPopupLabel.TextScaled = true
+	statPopupLabel.TextWrapped = true
+	statPopupLabel.Text = ""
+	statPopupLabel.ZIndex = 5
+	statPopupLabel.Parent = statPopup
 
-	row.MouseEnter:Connect(function()
+	local statPopupClose = Instance.new("TextButton")
+	statPopupClose.Name = "Close"
+	statPopupClose.AnchorPoint = Vector2.new(1, 0.5)
+	statPopupClose.Position = UDim2.new(1, -4, 0.5, 0)
+	statPopupClose.Size = UDim2.new(0, 20, 0, 20)
+	statPopupClose.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+	statPopupClose.TextColor3 = Color3.fromRGB(255, 255, 255)
+	statPopupClose.Font = Enum.Font.GothamBold
+	statPopupClose.TextScaled = true
+	statPopupClose.Text = "X"
+	statPopupClose.ZIndex = 6
+	statPopupClose.Parent = statPopup
+
+	row.MouseButton1Click:Connect(function()
+		if statPopup.Visible then
+			statPopup.Visible = false
+			return
+		end
+
 		local statsText = player:GetAttribute("Equipped" .. slotName .. "Stats")
 		if not statsText or statsText == "" then
 			return
 		end
 
-		tooltipLabel.Text = statsText
-		tooltip.Visible = true
+		statPopupLabel.Text = statsText
+		statPopup.Visible = true
 	end)
 
-	row.MouseLeave:Connect(function()
-		tooltip.Visible = false
+	statPopupClose.MouseButton1Click:Connect(function()
+		statPopup.Visible = false
 	end)
 end
 
