@@ -276,7 +276,7 @@ local function flashBowSlot()
 	end)
 end
 
--- WoW-style character/equipment panel, toggled with I.
+-- WoW-style character/equipment panel, toggled via an on-screen button or C.
 local EQUIPMENT_SLOTS = { "Head", "Shoulders", "Chest", "Legs" }
 local EPIC_TEXT_COLOR = Color3.fromRGB(163, 53, 238)
 local EMPTY_TEXT_COLOR = Color3.fromRGB(140, 140, 140)
@@ -304,8 +304,20 @@ titleLabel.BackgroundTransparency = 1
 titleLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextScaled = true
-titleLabel.Text = "Character (I to close)"
+titleLabel.Text = "Character"
 titleLabel.Parent = inventoryPanel
+
+local closeButton = Instance.new("TextButton")
+closeButton.Name = "CloseButton"
+closeButton.AnchorPoint = Vector2.new(1, 0)
+closeButton.Position = UDim2.new(1, -6, 0, 6)
+closeButton.Size = UDim2.new(0, 24, 0, 24)
+closeButton.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeButton.Font = Enum.Font.GothamBold
+closeButton.TextScaled = true
+closeButton.Text = "X"
+closeButton.Parent = inventoryPanel
 
 local slotValueLabels = {}
 
@@ -361,6 +373,33 @@ for _, slotName in ipairs(EQUIPMENT_SLOTS) do
 	player:GetAttributeChangedSignal("Equipped" .. slotName):Connect(updateInventoryPanel)
 end
 updateInventoryPanel()
+
+-- Always-visible button, since it doesn't depend on any keyboard input
+-- reaching the game (a keybind toggle alone wasn't working reliably).
+local openButton = Instance.new("TextButton")
+openButton.Name = "CharacterButton"
+openButton.AnchorPoint = Vector2.new(1, 0)
+openButton.Position = UDim2.new(1, -12, 0, 12)
+openButton.Size = UDim2.new(0, 110, 0, 36)
+openButton.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+openButton.BackgroundTransparency = 0.15
+openButton.TextColor3 = Color3.fromRGB(255, 215, 0)
+openButton.Font = Enum.Font.GothamBold
+openButton.TextScaled = true
+openButton.Text = "Character"
+openButton.Parent = screenGui
+
+local openButtonStroke = Instance.new("UIStroke")
+openButtonStroke.Thickness = 2
+openButtonStroke.Color = EPIC_TEXT_COLOR
+openButtonStroke.Parent = openButton
+
+local function toggleInventoryPanel()
+	inventoryPanel.Visible = not inventoryPanel.Visible
+end
+
+openButton.MouseButton1Click:Connect(toggleInventoryPanel)
+closeButton.MouseButton1Click:Connect(toggleInventoryPanel)
 
 local function shoot()
 	local camera = Workspace.CurrentCamera
@@ -459,8 +498,8 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		activateShieldEvent:FireServer()
 	elseif input.KeyCode == Enum.KeyCode.Three then
 		shootArrow()
-	elseif input.KeyCode == Enum.KeyCode.I then
-		inventoryPanel.Visible = not inventoryPanel.Visible
+	elseif input.KeyCode == Enum.KeyCode.C then
+		toggleInventoryPanel()
 	end
 end)
 
