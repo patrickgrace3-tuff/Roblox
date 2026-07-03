@@ -74,6 +74,11 @@ local ITEM_TEMPLATES = {
 	Chest = { itemName = "Chestplate", statType = "health", baseValue = 25 },
 	Legs = { itemName = "Legguards", statType = "speed", baseValue = 4 },
 }
+local STAT_LABELS = {
+	health = "Max Health",
+	damage = "Attack Damage",
+	speed = "Move Speed",
+}
 
 local platformQueues = {} -- [player] = { platform, platform, ... } oldest first
 local lastShotTime = {} -- [player] = os.clock() of last shot
@@ -467,6 +472,14 @@ local function reapplyGearVisuals(player, character)
 	end
 end
 
+local function formatStatText(item)
+	local label = STAT_LABELS[item.statType]
+	if not label then
+		return ""
+	end
+	return "+" .. item.value .. " " .. label
+end
+
 local function equipItem(player, slot, item)
 	local equipment = playerEquipment[player]
 	if not equipment then
@@ -476,6 +489,7 @@ local function equipItem(player, slot, item)
 
 	equipment[slot] = item
 	player:SetAttribute("Equipped" .. slot, item.displayName)
+	player:SetAttribute("Equipped" .. slot .. "Stats", formatStatText(item))
 
 	local character = player.Character
 	if character then
@@ -507,20 +521,30 @@ local function createLootDrop(position, slot, item)
 	loot.Parent = Workspace
 
 	local billboard = Instance.new("BillboardGui")
-	billboard.Size = UDim2.new(0, 220, 0, 30)
+	billboard.Size = UDim2.new(0, 220, 0, 44)
 	billboard.StudsOffset = Vector3.new(0, 2, 0)
 	billboard.AlwaysOnTop = true
 	billboard.Adornee = loot
 	billboard.Parent = loot
 
 	local label = Instance.new("TextLabel")
-	label.Size = UDim2.new(1, 0, 1, 0)
+	label.Size = UDim2.new(1, 0, 0, 24)
 	label.BackgroundTransparency = 1
 	label.TextColor3 = item.color
 	label.Font = Enum.Font.GothamBold
 	label.TextScaled = true
 	label.Text = item.displayName
 	label.Parent = billboard
+
+	local statLabel = Instance.new("TextLabel")
+	statLabel.Size = UDim2.new(1, 0, 0, 18)
+	statLabel.Position = UDim2.new(0, 0, 0, 24)
+	statLabel.BackgroundTransparency = 1
+	statLabel.TextColor3 = Color3.fromRGB(120, 220, 120)
+	statLabel.Font = Enum.Font.Gotham
+	statLabel.TextScaled = true
+	statLabel.Text = formatStatText(item)
+	statLabel.Parent = billboard
 
 	local connection
 	connection = loot.Touched:Connect(function(hit)

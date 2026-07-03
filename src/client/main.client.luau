@@ -353,6 +353,51 @@ for index, slotName in ipairs(EQUIPMENT_SLOTS) do
 	valueLabel.Parent = row
 
 	slotValueLabels[slotName] = valueLabel
+
+	-- Hover tooltip showing the actual stat bonus, popping out to the
+	-- right of the panel so it doesn't overlap the row it belongs to.
+	local tooltip = Instance.new("Frame")
+	tooltip.Name = "Tooltip"
+	tooltip.AnchorPoint = Vector2.new(0, 0.5)
+	tooltip.Position = UDim2.new(1, 8, 0.5, 0)
+	tooltip.Size = UDim2.new(0, 170, 0, 32)
+	tooltip.BackgroundColor3 = Color3.fromRGB(10, 10, 14)
+	tooltip.BackgroundTransparency = 0.05
+	tooltip.BorderSizePixel = 0
+	tooltip.Visible = false
+	tooltip.ZIndex = 5
+	tooltip.Parent = row
+
+	local tooltipStroke = Instance.new("UIStroke")
+	tooltipStroke.Thickness = 1
+	tooltipStroke.Color = EPIC_TEXT_COLOR
+	tooltipStroke.Parent = tooltip
+
+	local tooltipLabel = Instance.new("TextLabel")
+	tooltipLabel.Size = UDim2.new(1, -8, 1, 0)
+	tooltipLabel.Position = UDim2.new(0, 4, 0, 0)
+	tooltipLabel.BackgroundTransparency = 1
+	tooltipLabel.TextColor3 = Color3.fromRGB(120, 220, 120)
+	tooltipLabel.Font = Enum.Font.Gotham
+	tooltipLabel.TextScaled = true
+	tooltipLabel.TextWrapped = true
+	tooltipLabel.Text = ""
+	tooltipLabel.ZIndex = 5
+	tooltipLabel.Parent = tooltip
+
+	row.MouseEnter:Connect(function()
+		local statsText = player:GetAttribute("Equipped" .. slotName .. "Stats")
+		if not statsText or statsText == "" then
+			return
+		end
+
+		tooltipLabel.Text = statsText
+		tooltip.Visible = true
+	end)
+
+	row.MouseLeave:Connect(function()
+		tooltip.Visible = false
+	end)
 end
 
 local function updateInventoryPanel()
