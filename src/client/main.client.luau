@@ -277,15 +277,16 @@ local function flashBowSlot()
 end
 
 -- WoW-style character/equipment panel, toggled via an on-screen button or C.
-local EQUIPMENT_SLOTS = { "Head", "Shoulders", "Chest", "Legs" }
+local EQUIPMENT_SLOTS = { "Head", "Shoulders", "Chest", "Legs", "Weapon" }
 local EPIC_TEXT_COLOR = Color3.fromRGB(163, 53, 238)
+local LEGENDARY_TEXT_COLOR = Color3.fromRGB(255, 128, 0)
 local EMPTY_TEXT_COLOR = Color3.fromRGB(140, 140, 140)
 
 local inventoryPanel = Instance.new("Frame")
 inventoryPanel.Name = "InventoryPanel"
 inventoryPanel.AnchorPoint = Vector2.new(0.5, 0.5)
 inventoryPanel.Position = UDim2.new(0.5, 0, 0.5, 0)
-inventoryPanel.Size = UDim2.new(0, 300, 0, 260)
+inventoryPanel.Size = UDim2.new(0, 300, 0, 314)
 inventoryPanel.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 inventoryPanel.BackgroundTransparency = 0.05
 inventoryPanel.BorderSizePixel = 0
@@ -374,7 +375,7 @@ for index, slotName in ipairs(EQUIPMENT_SLOTS) do
 
 	local statPopupStroke = Instance.new("UIStroke")
 	statPopupStroke.Thickness = 1
-	statPopupStroke.Color = EPIC_TEXT_COLOR
+	statPopupStroke.Color = slotName == "Weapon" and LEGENDARY_TEXT_COLOR or EPIC_TEXT_COLOR
 	statPopupStroke.Parent = statPopup
 
 	local statPopupLabel = Instance.new("TextLabel")
@@ -413,6 +414,8 @@ for index, slotName in ipairs(EQUIPMENT_SLOTS) do
 			return
 		end
 
+		local _, lineBreaks = statsText:gsub("\n", "")
+		statPopup.Size = UDim2.new(0, 190, 0, (lineBreaks + 1) * 20 + 12)
 		statPopupLabel.Text = statsText
 		statPopup.Visible = true
 	end)
@@ -428,7 +431,7 @@ local function updateInventoryPanel()
 		local label = slotValueLabels[slotName]
 		if equipped then
 			label.Text = equipped
-			label.TextColor3 = EPIC_TEXT_COLOR
+			label.TextColor3 = slotName == "Weapon" and LEGENDARY_TEXT_COLOR or EPIC_TEXT_COLOR
 		else
 			label.Text = "Empty"
 			label.TextColor3 = EMPTY_TEXT_COLOR

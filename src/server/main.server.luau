@@ -63,11 +63,14 @@ local BOW_RANGE = 200
 local BASE_MAX_HEALTH = 100
 local BOSS_RESPAWN_DELAY = 20
 local EPIC_COLOR = Color3.fromRGB(163, 53, 238)
+local LEGENDARY_COLOR = Color3.fromRGB(255, 128, 0)
+local DEFAULT_SWORD_COLOR = Color3.fromRGB(210, 210, 220)
 
 -- statType: "health" adds to MaxHealth, "damage" adds to sword/bow damage,
 -- "speed" adds to WalkSpeed. baseValue is doubled for the (currently only)
 -- Epic rarity dropped by the boss.
-local EQUIPMENT_SLOTS = { "Head", "Shoulders", "Chest", "Legs" }
+local ARMOR_SLOTS = { "Head", "Shoulders", "Chest", "Legs" }
+local EQUIPMENT_SLOTS = { "Head", "Shoulders", "Chest", "Legs", "Weapon" }
 local ITEM_TEMPLATES = {
 	Head = { itemName = "Helm", statType = "health", baseValue = 15 },
 	Shoulders = { itemName = "Shoulderguards", statType = "damage", baseValue = 5 },
@@ -80,6 +83,19 @@ local STAT_LABELS = {
 	speed = "Move Speed",
 }
 
+-- Guaranteed on the very first Nonna kill of the server, in addition to her
+-- normal random armor drop. A single shared table is fine since it's only
+-- ever handed out once and never mutated.
+local LEGENDARY_WEAPON = {
+	displayName = "Nonna's Iron Ladle",
+	color = LEGENDARY_COLOR,
+	stats = {
+		{ statType = "damage", value = 12 },
+		{ statType = "health", value = 20 },
+		{ statType = "speed", value = 5 },
+	},
+}
+
 local platformQueues = {} -- [player] = { platform, platform, ... } oldest first
 local lastShotTime = {} -- [player] = os.clock() of last shot
 local jumpBoosts = {} -- [player] = { remaining }
@@ -90,6 +106,7 @@ local shieldExpiry = {} -- [player] = os.clock() the shield buff ends
 local playerEquipment = {} -- [player] = { [slot] = itemData or nil }
 local playerStats = {} -- [player] = { bonusHealth, bonusDamage, bonusSpeed }
 local bossSpawnPosition = nil
+local legendaryDropped = false -- true once the guaranteed first-kill weapon has been handed out
 local createMob -- forward declared: damageMob (defined earlier) respawns the boss via this
 
 local function setupJungleAtmosphere()
@@ -373,12 +390,14 @@ local function recalculateStats(player)
 	local bonusHealth, bonusDamage, bonusSpeed = 0, 0, 0
 	for _, item in pairs(equipment) do
 		if item then
-			if item.statType == "health" then
-				bonusHealth += item.value
-			elseif item.statType == "damage" then
-				bonusDamage += item.value
-			elseif item.statType == "speed" then
-				bonusSpeed += item.value
+			for _, stat in ipairs(item.stats) do
+				if stat.statType == "health" then
+					bonusHealth += stat.value
+				elseif stat.statType == "damage" then
+					bonusDamage += stat.value
+				elseif stat.statType == "speed" then
+					bonusSpeed += stat.value
+				end
 			end
 		end
 	end
@@ -418,6 +437,14 @@ local function getSlotAttachPart(character, slot)
 end
 
 local function updateGearVisual(character, slot, item)
+	if slot == "Weapon" then
+		local sword = character:FindFirstChild("SwordVisual")
+		if sword then
+			sword.Color = item and item.color or DEFAULT_SWORD_COLOR
+		end
+		return
+	end
+
 	local existingVisual = character:FindFirstChild("Gear" .. slot)
 	if existingVisual then
 		existingVisual:Destroy()
@@ -473,11 +500,14 @@ local function reapplyGearVisuals(player, character)
 end
 
 local function formatStatText(item)
-	local label = STAT_LABELS[item.statType]
-	if not label then
-		return ""
+	local lines = {}
+	for _, stat in ipairs(item.stats) do
+		local label = STAT_LABELS[stat.statType]
+		if label then
+			table.insert(lines, "+" .. stat.value .. " " .. label)
+		end
 	end
-	return "+" .. item.value .. " " .. label
+	return table.concat(lines, "\n")
 end
 
 local function equipItem(player, slot, item)
@@ -502,8 +532,7 @@ end
 local function generateEpicItem(slot)
 	local template = ITEM_TEMPLATES[slot]
 	return {
-		statType = template.statType,
-		value = template.baseValue * 2,
+		stats = { { statType = template.statType, value = template.baseValue * 2 } },
 		color = EPIC_COLOR,
 		displayName = "Epic " .. template.itemName,
 	}
@@ -520,8 +549,11 @@ local function createLootDrop(position, slot, item)
 	loot.CFrame = CFrame.new(position.X, 2, position.Z)
 	loot.Parent = Workspace
 
+	local statLines = #item.stats
+	local statBlockHeight = statLines * 18
+
 	local billboard = Instance.new("BillboardGui")
-	billboard.Size = UDim2.new(0, 220, 0, 44)
+	billboard.Size = UDim2.new(0, 220, 0, 24 + statBlockHeight)
 	billboard.StudsOffset = Vector3.new(0, 2, 0)
 	billboard.AlwaysOnTop = true
 	billboard.Adornee = loot
@@ -537,12 +569,13 @@ local function createLootDrop(position, slot, item)
 	label.Parent = billboard
 
 	local statLabel = Instance.new("TextLabel")
-	statLabel.Size = UDim2.new(1, 0, 0, 18)
+	statLabel.Size = UDim2.new(1, 0, 0, statBlockHeight)
 	statLabel.Position = UDim2.new(0, 0, 0, 24)
 	statLabel.BackgroundTransparency = 1
 	statLabel.TextColor3 = Color3.fromRGB(120, 220, 120)
 	statLabel.Font = Enum.Font.Gotham
 	statLabel.TextScaled = true
+	statLabel.TextWrapped = true
 	statLabel.Text = formatStatText(item)
 	statLabel.Parent = billboard
 
@@ -577,7 +610,13 @@ local function damageMob(model, amount)
 		if isBoss then
 			createVictoryPedestal(position)
 
-			local slot = EQUIPMENT_SLOTS[math.random(1, #EQUIPMENT_SLOTS)]
+			if not legendaryDropped then
+				legendaryDropped = true
+				local legendaryPosition = position + Vector3.new(math.random(-4, 4), 0, math.random(-4, 4))
+				createLootDrop(legendaryPosition, "Weapon", LEGENDARY_WEAPON)
+			end
+
+			local slot = ARMOR_SLOTS[math.random(1, #ARMOR_SLOTS)]
 			local item = generateEpicItem(slot)
 			local lootPosition = position + Vector3.new(math.random(-4, 4), 0, math.random(-4, 4))
 			createLootDrop(lootPosition, slot, item)
