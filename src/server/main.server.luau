@@ -96,98 +96,6 @@ local LEGENDARY_WEAPON = {
 	},
 }
 
--- Armor/weapon drops use real mesh pieces cloned from these saved models
--- instead of plain colored blocks/tints. Each template is either a real
--- Roblox Accessory (attached via Humanoid:AddAccessory, which auto-solves
--- positioning from the rig's attachment points) or a plain BasePart (welded
--- directly at the target body part's CFrame). Falls back to the old
--- colored-block/tint visual for any slot a set doesn't cover.
---
--- These come in as .rbxm files synced by Rojo into src/shared (which maps to
--- ReplicatedStorage), NOT via InsertService:LoadAsset -- that API only works
--- for models published as public "Free Models", and personal/private saved
--- models can't be fetched that way at all from a running game.
-local ARMOR_SET_TEMPLATE_NAME = "ArmorSetTemplate"
-local LEGENDARY_WEAPON_TEMPLATE_NAME = "LegendaryWeaponTemplate"
-local ARMOR_PIECE_KEYWORDS = {
-	Head = { "head", "helm", "hood", "mask" },
-	Shoulders = { "shoulder", "pauldron", "spaulder" },
-	Chest = { "chest", "torso", "breastplate", "cuirass" },
-	Legs = { "leg", "pant", "greave", "boot" },
-}
-local armorSetPieces = {} -- [slot] = template Accessory or BasePart to clone when equipping
-local legendaryWeaponTemplate = nil -- template Accessory or BasePart for Nonna's Iron Ladle
-
-local function loadArmorSet()
-	-- Rojo syncs this straight into the DataModel before the server starts,
-	-- so it's either already there or it isn't -- never block waiting for it
-	-- (a missing file would otherwise stall the rest of this script's
-	-- startup, including combat setup below, for the whole WaitForChild
-	-- timeout).
-	local result = ReplicatedStorage:FindFirstChild(ARMOR_SET_TEMPLATE_NAME)
-	if not result then
-		warn(
-			ARMOR_SET_TEMPLATE_NAME
-				.. " not found in ReplicatedStorage -- add src/shared/"
-				.. ARMOR_SET_TEMPLATE_NAME
-				.. ".rbxm"
-		)
-		return
-	end
-
-	for _, descendant in ipairs(result:GetDescendants()) do
-		if descendant:IsA("BasePart") then
-			local lowerName = descendant.Name:lower()
-			for slot, keywords in pairs(ARMOR_PIECE_KEYWORDS) do
-				if not armorSetPieces[slot] then
-					for _, keyword in ipairs(keywords) do
-						if lowerName:find(keyword, 1, true) then
-							local accessory = descendant:FindFirstAncestorOfClass("Accessory")
-							armorSetPieces[slot] = accessory or descendant
-							break
-						end
-					end
-				end
-			end
-		end
-	end
-
-	for _, slot in ipairs(ARMOR_SLOTS) do
-		if not armorSetPieces[slot] then
-			warn(ARMOR_SET_TEMPLATE_NAME .. " has no matching piece for slot: " .. slot)
-		end
-	end
-end
-
-local function loadLegendaryWeaponModel()
-	local result = ReplicatedStorage:FindFirstChild(LEGENDARY_WEAPON_TEMPLATE_NAME)
-	if not result then
-		warn(
-			LEGENDARY_WEAPON_TEMPLATE_NAME
-				.. " not found in ReplicatedStorage -- add src/shared/"
-				.. LEGENDARY_WEAPON_TEMPLATE_NAME
-				.. ".rbxm"
-		)
-		return
-	end
-
-	local accessory = result:FindFirstChildWhichIsA("Accessory", true)
-	if accessory then
-		legendaryWeaponTemplate = accessory
-		return
-	end
-
-	legendaryWeaponTemplate = result.PrimaryPart or result:FindFirstChildWhichIsA("BasePart", true)
-	if not legendaryWeaponTemplate then
-		warn(LEGENDARY_WEAPON_TEMPLATE_NAME .. " has no usable BasePart")
-	end
-end
-
--- pcall'd so a bug in either loader can never take down the rest of this
--- script's startup (dungeon/mob/combat setup all happens after this point).
-pcall(loadArmorSet)
-pcall(loadLegendaryWeaponModel)
-
 local platformQueues = {} -- [player] = { platform, platform, ... } oldest first
 local lastShotTime = {} -- [player] = os.clock() of last shot
 local jumpBoosts = {} -- [player] = { remaining }
@@ -528,76 +436,12 @@ local function getSlotAttachPart(character, slot)
 	return nil
 end
 
--- template is either a real Accessory (attached via Humanoid:AddAccessory,
--- which auto-solves position/rotation from the rig's attachment points) or a
--- plain BasePart (welded directly at attachPart's CFrame plus offset).
-local function cloneGearPiece(character, humanoid, template, name, attachPart, offset)
-	if template:IsA("Accessory") then
-		local accessory = template:Clone()
-		accessory.Name = name
-		if humanoid then
-			local ok = pcall(function()
-				humanoid:AddAccessory(accessory)
-			end)
-			if not ok then
-				accessory:Destroy()
-			end
-		else
-			accessory:Destroy()
-		end
-		return
-	end
-
-	local visual = template:Clone()
-	visual.Name = name
-	visual.Anchored = false
-	visual.CanCollide = false
-	visual.Massless = true
-	if visual.Transparency >= 1 then
-		visual.Transparency = 0
-	end
-	visual.CFrame = attachPart.CFrame * (offset or CFrame.new())
-	visual.Parent = character
-
-	local weld = Instance.new("WeldConstraint")
-	weld.Part0 = attachPart
-	weld.Part1 = visual
-	weld.Parent = visual
-end
-
 local function updateGearVisual(character, slot, item)
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-
 	if slot == "Weapon" then
-		local existingWeaponVisual = character:FindFirstChild("GearWeapon")
-		if existingWeaponVisual then
-			existingWeaponVisual:Destroy()
-		end
-
 		local sword = character:FindFirstChild("SwordVisual")
-
-		if not item then
-			if sword then
-				sword.Transparency = 0
-				sword.Color = DEFAULT_SWORD_COLOR
-			end
-			return
+		if sword then
+			sword.Color = item and item.color or DEFAULT_SWORD_COLOR
 		end
-
-		if legendaryWeaponTemplate then
-			if sword then
-				sword.Transparency = 1
-			end
-
-			local rightHand = character:FindFirstChild("RightHand") or character:FindFirstChild("Right Arm")
-			if rightHand then
-				cloneGearPiece(character, humanoid, legendaryWeaponTemplate, "GearWeapon", rightHand, CFrame.new(0, -2, 0))
-			end
-		elseif sword then
-			sword.Transparency = 0
-			sword.Color = item.color
-		end
-
 		return
 	end
 
@@ -612,13 +456,6 @@ local function updateGearVisual(character, slot, item)
 
 	local attachPart = getSlotAttachPart(character, slot)
 	if not attachPart then
-		return
-	end
-
-	local template = armorSetPieces[slot]
-
-	if template then
-		cloneGearPiece(character, humanoid, template, "Gear" .. slot, attachPart, nil)
 		return
 	end
 
