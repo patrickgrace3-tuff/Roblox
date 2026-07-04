@@ -1,7 +1,5 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ServerStorage = game:GetService("ServerStorage")
-local InsertService = game:GetService("InsertService")
 local Workspace = game:GetService("Workspace")
 local Lighting = game:GetService("Lighting")
 local RunService = game:GetService("RunService")
@@ -104,8 +102,13 @@ local LEGENDARY_WEAPON = {
 -- positioning from the rig's attachment points) or a plain BasePart (welded
 -- directly at the target body part's CFrame). Falls back to the old
 -- colored-block/tint visual for any slot a set doesn't cover.
-local ARMOR_SET_ASSET_ID = 98451603627839
-local LEGENDARY_WEAPON_ASSET_ID = 139422675603061
+--
+-- These come in as .rbxm files synced by Rojo into src/shared (which maps to
+-- ReplicatedStorage), NOT via InsertService:LoadAsset -- that API only works
+-- for models published as public "Free Models", and personal/private saved
+-- models can't be fetched that way at all from a running game.
+local ARMOR_SET_TEMPLATE_NAME = "ArmorSetTemplate"
+local LEGENDARY_WEAPON_TEMPLATE_NAME = "LegendaryWeaponTemplate"
 local ARMOR_PIECE_KEYWORDS = {
 	Head = { "head", "helm", "hood", "mask" },
 	Shoulders = { "shoulder", "pauldron", "spaulder" },
@@ -115,24 +118,15 @@ local ARMOR_PIECE_KEYWORDS = {
 local armorSetPieces = {} -- [slot] = template Accessory or BasePart to clone when equipping
 local legendaryWeaponTemplate = nil -- template Accessory or BasePart for Nonna's Iron Ladle
 
-local function loadAssetModel(assetId, label)
-	local success, result = pcall(function()
-		return InsertService:LoadAsset(assetId)
-	end)
-
-	if not success or not result then
-		warn("Failed to load " .. label .. " asset " .. assetId .. ": " .. tostring(result))
-		return nil
-	end
-
-	result.Name = label .. "Template"
-	result.Parent = ServerStorage
-	return result
-end
-
 local function loadArmorSet()
-	local result = loadAssetModel(ARMOR_SET_ASSET_ID, "ArmorSet")
+	local result = ReplicatedStorage:WaitForChild(ARMOR_SET_TEMPLATE_NAME, 5)
 	if not result then
+		warn(
+			ARMOR_SET_TEMPLATE_NAME
+				.. " not found in ReplicatedStorage -- add src/shared/"
+				.. ARMOR_SET_TEMPLATE_NAME
+				.. ".rbxm"
+		)
 		return
 	end
 
@@ -155,14 +149,20 @@ local function loadArmorSet()
 
 	for _, slot in ipairs(ARMOR_SLOTS) do
 		if not armorSetPieces[slot] then
-			warn("Armor set asset " .. ARMOR_SET_ASSET_ID .. " has no matching piece for slot: " .. slot)
+			warn(ARMOR_SET_TEMPLATE_NAME .. " has no matching piece for slot: " .. slot)
 		end
 	end
 end
 
 local function loadLegendaryWeaponModel()
-	local result = loadAssetModel(LEGENDARY_WEAPON_ASSET_ID, "LegendaryWeapon")
+	local result = ReplicatedStorage:WaitForChild(LEGENDARY_WEAPON_TEMPLATE_NAME, 5)
 	if not result then
+		warn(
+			LEGENDARY_WEAPON_TEMPLATE_NAME
+				.. " not found in ReplicatedStorage -- add src/shared/"
+				.. LEGENDARY_WEAPON_TEMPLATE_NAME
+				.. ".rbxm"
+		)
 		return
 	end
 
@@ -174,12 +174,12 @@ local function loadLegendaryWeaponModel()
 
 	legendaryWeaponTemplate = result.PrimaryPart or result:FindFirstChildWhichIsA("BasePart", true)
 	if not legendaryWeaponTemplate then
-		warn("Legendary weapon asset " .. LEGENDARY_WEAPON_ASSET_ID .. " has no usable BasePart")
+		warn(LEGENDARY_WEAPON_TEMPLATE_NAME .. " has no usable BasePart")
 	end
 end
 
-task.spawn(loadArmorSet)
-task.spawn(loadLegendaryWeaponModel)
+loadArmorSet()
+loadLegendaryWeaponModel()
 
 local platformQueues = {} -- [player] = { platform, platform, ... } oldest first
 local lastShotTime = {} -- [player] = os.clock() of last shot
