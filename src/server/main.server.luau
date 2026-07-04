@@ -98,30 +98,43 @@ local LEGENDARY_WEAPON = {
 	},
 }
 
--- Armor drops use real mesh pieces cloned from this saved model instead of
--- plain colored blocks, matched to a slot by keyword search over part names.
--- Falls back to the old colored-block visual for any slot it can't match.
+-- Armor/weapon drops use real mesh pieces cloned from these saved models
+-- instead of plain colored blocks/tints. Each template is either a real
+-- Roblox Accessory (attached via Humanoid:AddAccessory, which auto-solves
+-- positioning from the rig's attachment points) or a plain BasePart (welded
+-- directly at the target body part's CFrame). Falls back to the old
+-- colored-block/tint visual for any slot a set doesn't cover.
 local ARMOR_SET_ASSET_ID = 98451603627839
+local LEGENDARY_WEAPON_ASSET_ID = 139422675603061
 local ARMOR_PIECE_KEYWORDS = {
 	Head = { "head", "helm", "hood", "mask" },
 	Shoulders = { "shoulder", "pauldron", "spaulder" },
 	Chest = { "chest", "torso", "breastplate", "cuirass" },
 	Legs = { "leg", "pant", "greave", "boot" },
 }
-local armorSetPieces = {} -- [slot] = template BasePart to Clone() when equipping
+local armorSetPieces = {} -- [slot] = template Accessory or BasePart to clone when equipping
+local legendaryWeaponTemplate = nil -- template Accessory or BasePart for Nonna's Iron Ladle
 
-local function loadArmorSet()
+local function loadAssetModel(assetId, label)
 	local success, result = pcall(function()
-		return InsertService:LoadAsset(ARMOR_SET_ASSET_ID)
+		return InsertService:LoadAsset(assetId)
 	end)
 
 	if not success or not result then
-		warn("Failed to load armor set asset " .. ARMOR_SET_ASSET_ID .. ": " .. tostring(result))
-		return
+		warn("Failed to load " .. label .. " asset " .. assetId .. ": " .. tostring(result))
+		return nil
 	end
 
-	result.Name = "ArmorSetTemplate"
+	result.Name = label .. "Template"
 	result.Parent = ServerStorage
+	return result
+end
+
+local function loadArmorSet()
+	local result = loadAssetModel(ARMOR_SET_ASSET_ID, "ArmorSet")
+	if not result then
+		return
+	end
 
 	for _, descendant in ipairs(result:GetDescendants()) do
 		if descendant:IsA("BasePart") then
@@ -130,7 +143,8 @@ local function loadArmorSet()
 				if not armorSetPieces[slot] then
 					for _, keyword in ipairs(keywords) do
 						if lowerName:find(keyword, 1, true) then
-							armorSetPieces[slot] = descendant
+							local accessory = descendant:FindFirstAncestorOfClass("Accessory")
+							armorSetPieces[slot] = accessory or descendant
 							break
 						end
 					end
@@ -146,7 +160,26 @@ local function loadArmorSet()
 	end
 end
 
+local function loadLegendaryWeaponModel()
+	local result = loadAssetModel(LEGENDARY_WEAPON_ASSET_ID, "LegendaryWeapon")
+	if not result then
+		return
+	end
+
+	local accessory = result:FindFirstChildWhichIsA("Accessory", true)
+	if accessory then
+		legendaryWeaponTemplate = accessory
+		return
+	end
+
+	legendaryWeaponTemplate = result.PrimaryPart or result:FindFirstChildWhichIsA("BasePart", true)
+	if not legendaryWeaponTemplate then
+		warn("Legendary weapon asset " .. LEGENDARY_WEAPON_ASSET_ID .. " has no usable BasePart")
+	end
+end
+
 task.spawn(loadArmorSet)
+task.spawn(loadLegendaryWeaponModel)
 
 local platformQueues = {} -- [player] = { platform, platform, ... } oldest first
 local lastShotTime = {} -- [player] = os.clock() of last shot
@@ -488,12 +521,76 @@ local function getSlotAttachPart(character, slot)
 	return nil
 end
 
-local function updateGearVisual(character, slot, item)
-	if slot == "Weapon" then
-		local sword = character:FindFirstChild("SwordVisual")
-		if sword then
-			sword.Color = item and item.color or DEFAULT_SWORD_COLOR
+-- template is either a real Accessory (attached via Humanoid:AddAccessory,
+-- which auto-solves position/rotation from the rig's attachment points) or a
+-- plain BasePart (welded directly at attachPart's CFrame plus offset).
+local function cloneGearPiece(character, humanoid, template, name, attachPart, offset)
+	if template:IsA("Accessory") then
+		local accessory = template:Clone()
+		accessory.Name = name
+		if humanoid then
+			local ok = pcall(function()
+				humanoid:AddAccessory(accessory)
+			end)
+			if not ok then
+				accessory:Destroy()
+			end
+		else
+			accessory:Destroy()
 		end
+		return
+	end
+
+	local visual = template:Clone()
+	visual.Name = name
+	visual.Anchored = false
+	visual.CanCollide = false
+	visual.Massless = true
+	if visual.Transparency >= 1 then
+		visual.Transparency = 0
+	end
+	visual.CFrame = attachPart.CFrame * (offset or CFrame.new())
+	visual.Parent = character
+
+	local weld = Instance.new("WeldConstraint")
+	weld.Part0 = attachPart
+	weld.Part1 = visual
+	weld.Parent = visual
+end
+
+local function updateGearVisual(character, slot, item)
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+
+	if slot == "Weapon" then
+		local existingWeaponVisual = character:FindFirstChild("GearWeapon")
+		if existingWeaponVisual then
+			existingWeaponVisual:Destroy()
+		end
+
+		local sword = character:FindFirstChild("SwordVisual")
+
+		if not item then
+			if sword then
+				sword.Transparency = 0
+				sword.Color = DEFAULT_SWORD_COLOR
+			end
+			return
+		end
+
+		if legendaryWeaponTemplate then
+			if sword then
+				sword.Transparency = 1
+			end
+
+			local rightHand = character:FindFirstChild("RightHand") or character:FindFirstChild("Right Arm")
+			if rightHand then
+				cloneGearPiece(character, humanoid, legendaryWeaponTemplate, "GearWeapon", rightHand, CFrame.new(0, -2, 0))
+			end
+		elseif sword then
+			sword.Transparency = 0
+			sword.Color = item.color
+		end
+
 		return
 	end
 
@@ -512,35 +609,31 @@ local function updateGearVisual(character, slot, item)
 	end
 
 	local template = armorSetPieces[slot]
-	local visual
 
 	if template then
-		visual = template:Clone()
-		visual.Name = "Gear" .. slot
-		visual.CanCollide = false
-		visual.Massless = true
-		visual.CFrame = attachPart.CFrame
-	else
-		visual = Instance.new("Part")
-		visual.Name = "Gear" .. slot
-		visual.CanCollide = false
-		visual.Massless = true
-		visual.Material = Enum.Material.Metal
-		visual.Color = item.color
+		cloneGearPiece(character, humanoid, template, "Gear" .. slot, attachPart, nil)
+		return
+	end
 
-		if slot == "Head" then
-			visual.Size = Vector3.new(1.6, 0.6, 1.6)
-			visual.CFrame = attachPart.CFrame * CFrame.new(0, 0.6, 0)
-		elseif slot == "Shoulders" then
-			visual.Size = Vector3.new(2.6, 0.6, 1.4)
-			visual.CFrame = attachPart.CFrame * CFrame.new(0, 0.9, 0)
-		elseif slot == "Chest" then
-			visual.Size = Vector3.new(2.2, 1.2, 1.2)
-			visual.CFrame = attachPart.CFrame
-		elseif slot == "Legs" then
-			visual.Size = Vector3.new(1.8, 1.4, 1.2)
-			visual.CFrame = attachPart.CFrame
-		end
+	local visual = Instance.new("Part")
+	visual.Name = "Gear" .. slot
+	visual.CanCollide = false
+	visual.Massless = true
+	visual.Material = Enum.Material.Metal
+	visual.Color = item.color
+
+	if slot == "Head" then
+		visual.Size = Vector3.new(1.6, 0.6, 1.6)
+		visual.CFrame = attachPart.CFrame * CFrame.new(0, 0.6, 0)
+	elseif slot == "Shoulders" then
+		visual.Size = Vector3.new(2.6, 0.6, 1.4)
+		visual.CFrame = attachPart.CFrame * CFrame.new(0, 0.9, 0)
+	elseif slot == "Chest" then
+		visual.Size = Vector3.new(2.2, 1.2, 1.2)
+		visual.CFrame = attachPart.CFrame
+	elseif slot == "Legs" then
+		visual.Size = Vector3.new(1.8, 1.4, 1.2)
+		visual.CFrame = attachPart.CFrame
 	end
 
 	visual.Parent = character
