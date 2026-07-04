@@ -1,5 +1,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
+local InsertService = game:GetService("InsertService")
 local Workspace = game:GetService("Workspace")
 local Lighting = game:GetService("Lighting")
 local RunService = game:GetService("RunService")
@@ -95,6 +97,56 @@ local LEGENDARY_WEAPON = {
 		{ statType = "speed", value = 5 },
 	},
 }
+
+-- Armor drops use real mesh pieces cloned from this saved model instead of
+-- plain colored blocks, matched to a slot by keyword search over part names.
+-- Falls back to the old colored-block visual for any slot it can't match.
+local ARMOR_SET_ASSET_ID = 98451603627839
+local ARMOR_PIECE_KEYWORDS = {
+	Head = { "head", "helm", "hood", "mask" },
+	Shoulders = { "shoulder", "pauldron", "spaulder" },
+	Chest = { "chest", "torso", "breastplate", "cuirass" },
+	Legs = { "leg", "pant", "greave", "boot" },
+}
+local armorSetPieces = {} -- [slot] = template BasePart to Clone() when equipping
+
+local function loadArmorSet()
+	local success, result = pcall(function()
+		return InsertService:LoadAsset(ARMOR_SET_ASSET_ID)
+	end)
+
+	if not success or not result then
+		warn("Failed to load armor set asset " .. ARMOR_SET_ASSET_ID .. ": " .. tostring(result))
+		return
+	end
+
+	result.Name = "ArmorSetTemplate"
+	result.Parent = ServerStorage
+
+	for _, descendant in ipairs(result:GetDescendants()) do
+		if descendant:IsA("BasePart") then
+			local lowerName = descendant.Name:lower()
+			for slot, keywords in pairs(ARMOR_PIECE_KEYWORDS) do
+				if not armorSetPieces[slot] then
+					for _, keyword in ipairs(keywords) do
+						if lowerName:find(keyword, 1, true) then
+							armorSetPieces[slot] = descendant
+							break
+						end
+					end
+				end
+			end
+		end
+	end
+
+	for _, slot in ipairs(ARMOR_SLOTS) do
+		if not armorSetPieces[slot] then
+			warn("Armor set asset " .. ARMOR_SET_ASSET_ID .. " has no matching piece for slot: " .. slot)
+		end
+	end
+end
+
+task.spawn(loadArmorSet)
 
 local platformQueues = {} -- [player] = { platform, platform, ... } oldest first
 local lastShotTime = {} -- [player] = os.clock() of last shot
@@ -459,25 +511,36 @@ local function updateGearVisual(character, slot, item)
 		return
 	end
 
-	local visual = Instance.new("Part")
-	visual.Name = "Gear" .. slot
-	visual.CanCollide = false
-	visual.Massless = true
-	visual.Material = Enum.Material.Metal
-	visual.Color = item.color
+	local template = armorSetPieces[slot]
+	local visual
 
-	if slot == "Head" then
-		visual.Size = Vector3.new(1.6, 0.6, 1.6)
-		visual.CFrame = attachPart.CFrame * CFrame.new(0, 0.6, 0)
-	elseif slot == "Shoulders" then
-		visual.Size = Vector3.new(2.6, 0.6, 1.4)
-		visual.CFrame = attachPart.CFrame * CFrame.new(0, 0.9, 0)
-	elseif slot == "Chest" then
-		visual.Size = Vector3.new(2.2, 1.2, 1.2)
+	if template then
+		visual = template:Clone()
+		visual.Name = "Gear" .. slot
+		visual.CanCollide = false
+		visual.Massless = true
 		visual.CFrame = attachPart.CFrame
-	elseif slot == "Legs" then
-		visual.Size = Vector3.new(1.8, 1.4, 1.2)
-		visual.CFrame = attachPart.CFrame
+	else
+		visual = Instance.new("Part")
+		visual.Name = "Gear" .. slot
+		visual.CanCollide = false
+		visual.Massless = true
+		visual.Material = Enum.Material.Metal
+		visual.Color = item.color
+
+		if slot == "Head" then
+			visual.Size = Vector3.new(1.6, 0.6, 1.6)
+			visual.CFrame = attachPart.CFrame * CFrame.new(0, 0.6, 0)
+		elseif slot == "Shoulders" then
+			visual.Size = Vector3.new(2.6, 0.6, 1.4)
+			visual.CFrame = attachPart.CFrame * CFrame.new(0, 0.9, 0)
+		elseif slot == "Chest" then
+			visual.Size = Vector3.new(2.2, 1.2, 1.2)
+			visual.CFrame = attachPart.CFrame
+		elseif slot == "Legs" then
+			visual.Size = Vector3.new(1.8, 1.4, 1.2)
+			visual.CFrame = attachPart.CFrame
+		end
 	end
 
 	visual.Parent = character
