@@ -119,7 +119,12 @@ local armorSetPieces = {} -- [slot] = template Accessory or BasePart to clone wh
 local legendaryWeaponTemplate = nil -- template Accessory or BasePart for Nonna's Iron Ladle
 
 local function loadArmorSet()
-	local result = ReplicatedStorage:WaitForChild(ARMOR_SET_TEMPLATE_NAME, 5)
+	-- Rojo syncs this straight into the DataModel before the server starts,
+	-- so it's either already there or it isn't -- never block waiting for it
+	-- (a missing file would otherwise stall the rest of this script's
+	-- startup, including combat setup below, for the whole WaitForChild
+	-- timeout).
+	local result = ReplicatedStorage:FindFirstChild(ARMOR_SET_TEMPLATE_NAME)
 	if not result then
 		warn(
 			ARMOR_SET_TEMPLATE_NAME
@@ -155,7 +160,7 @@ local function loadArmorSet()
 end
 
 local function loadLegendaryWeaponModel()
-	local result = ReplicatedStorage:WaitForChild(LEGENDARY_WEAPON_TEMPLATE_NAME, 5)
+	local result = ReplicatedStorage:FindFirstChild(LEGENDARY_WEAPON_TEMPLATE_NAME)
 	if not result then
 		warn(
 			LEGENDARY_WEAPON_TEMPLATE_NAME
@@ -178,8 +183,10 @@ local function loadLegendaryWeaponModel()
 	end
 end
 
-loadArmorSet()
-loadLegendaryWeaponModel()
+-- pcall'd so a bug in either loader can never take down the rest of this
+-- script's startup (dungeon/mob/combat setup all happens after this point).
+pcall(loadArmorSet)
+pcall(loadLegendaryWeaponModel)
 
 local platformQueues = {} -- [player] = { platform, platform, ... } oldest first
 local lastShotTime = {} -- [player] = os.clock() of last shot
